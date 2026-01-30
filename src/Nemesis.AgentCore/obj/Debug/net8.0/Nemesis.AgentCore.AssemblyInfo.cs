@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Nemesis.AgentCore")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+681b4f6f58f2cef4e4558a0fbfc175727e4ce57a")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ab8e359107d798a14d1646a7213415917bfb7408")]
 [assembly: System.Reflection.AssemblyProductAttribute("Nemesis.AgentCore")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Nemesis.AgentCore")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
