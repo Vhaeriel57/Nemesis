@@ -6,6 +6,7 @@
 @inject Nemesis.Server.Services.ProjectService ProjectService
 @inject Nemesis.Server.Services.LogService LogService
 @inject ILlmProvider LlmProvider
+@inject IJSRuntime JSRuntime
 
 <PageTitle>Project - Nemesis</PageTitle>
 
@@ -143,9 +144,20 @@
 
     private async Task BrowseProject()
     {
-        // In a real implementation, this would use a file picker
-        // For now, just use the text input
-        LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Info, "UI", "Browse clicked - use text input for path");
+        try
+        {
+            var selectedPath = await JSRuntime.InvokeAsync<string>("pickFolder");
+            if (!string.IsNullOrEmpty(selectedPath))
+            {
+                projectPath = selectedPath;
+                LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Info, "UI", $"Project path selected: {projectPath}");
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Error, "UI", $"Browse failed: {ex.Message}");
+        }
     }
 
     private async Task StartIndexing()
