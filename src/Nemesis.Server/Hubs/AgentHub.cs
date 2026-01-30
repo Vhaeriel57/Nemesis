@@ -7,6 +7,7 @@ using Nemesis.Server.Services;
 using Nemesis.Shared.DTOs;
 using Nemesis.Shared.Interfaces;
 using Nemesis.Shared.Models;
+using NemesisLogLevel = Nemesis.Shared.DTOs.LogLevel;
 
 namespace Nemesis.Server.Hubs;
 
@@ -44,7 +45,7 @@ public class AgentHub : Hub
     public override async Task OnConnectedAsync()
     {
         _logger.LogInformation("Client connected: {ConnectionId}", Context.ConnectionId);
-        _logService.AddLog(LogLevel.Info, "Hub", $"Client connected: {Context.ConnectionId}");
+        _logService.AddLog(NemesisLogLevel.Info, "Hub", $"Client connected: {Context.ConnectionId}");
 
         // Send current state
         await Clients.Caller.SendAsync("ProjectInfoUpdated", _projectService.CurrentProject);
@@ -66,7 +67,7 @@ public class AgentHub : Hub
     public async Task<ProjectInfo> IndexProject(string projectPath)
     {
         _logger.LogInformation("Indexing project: {Path}", projectPath);
-        _logService.AddLog(LogLevel.Info, "Indexer", $"Starting indexing: {projectPath}");
+        _logService.AddLog(NemesisLogLevel.Info, "Indexer", $"Starting indexing: {projectPath}");
 
         var progress = new Progress<IndexingProgress>(async p =>
         {
@@ -86,7 +87,7 @@ public class AgentHub : Hub
                 await _ragService.IndexProjectAsync(index, progress);
             }
 
-            _logService.AddLog(LogLevel.Info, "Indexer", $"Indexing complete: {projectInfo.TotalFiles} files, {projectInfo.TotalTypes} types");
+            _logService.AddLog(NemesisLogLevel.Info, "Indexer", $"Indexing complete: {projectInfo.TotalFiles} files, {projectInfo.TotalTypes} types");
 
             await Clients.Caller.SendAsync("ProjectInfoUpdated", projectInfo);
             return projectInfo;
@@ -94,7 +95,7 @@ public class AgentHub : Hub
         catch (Exception ex)
         {
             _logger.LogError(ex, "Indexing failed");
-            _logService.AddLog(LogLevel.Error, "Indexer", $"Indexing failed: {ex.Message}");
+            _logService.AddLog(NemesisLogLevel.Error, "Indexer", $"Indexing failed: {ex.Message}");
             throw;
         }
     }
@@ -107,7 +108,7 @@ public class AgentHub : Hub
             return;
         }
 
-        _logService.AddLog(LogLevel.Info, "Chat", $"[{agentType}] User: {message.Substring(0, Math.Min(100, message.Length))}...");
+        _logService.AddLog(NemesisLogLevel.Info, "Chat", $"[{agentType}] User: {message.Substring(0, Math.Min(100, message.Length))}...");
 
         try
         {
@@ -119,7 +120,7 @@ public class AgentHub : Hub
         catch (Exception ex)
         {
             _logger.LogError(ex, "Message processing failed");
-            _logService.AddLog(LogLevel.Error, "Chat", $"Error: {ex.Message}");
+            _logService.AddLog(NemesisLogLevel.Error, "Chat", $"Error: {ex.Message}");
             await Clients.Caller.SendAsync("Error", ex.Message);
         }
     }
@@ -131,18 +132,18 @@ public class AgentHub : Hub
             throw new ArgumentException($"Unknown agent type: {agentType}");
         }
 
-        _logService.AddLog(LogLevel.Info, "Chat", $"[{agentType}] User: {message.Substring(0, Math.Min(100, message.Length))}...");
+        _logService.AddLog(NemesisLogLevel.Info, "Chat", $"[{agentType}] User: {message.Substring(0, Math.Min(100, message.Length))}...");
 
         try
         {
             var response = await _orchestrator.SendMessageAsync(message, agent, sessionId);
-            _logService.AddLog(LogLevel.Info, "Chat", $"[{agentType}] Response received ({response.Content.Length} chars)");
+            _logService.AddLog(NemesisLogLevel.Info, "Chat", $"[{agentType}] Response received ({response.Content.Length} chars)");
             return response;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Message processing failed");
-            _logService.AddLog(LogLevel.Error, "Chat", $"Error: {ex.Message}");
+            _logService.AddLog(NemesisLogLevel.Error, "Chat", $"Error: {ex.Message}");
             throw;
         }
     }
@@ -155,23 +156,23 @@ public class AgentHub : Hub
     public void ClearChatHistory(string sessionId)
     {
         _orchestrator.ClearChatHistory(sessionId);
-        _logService.AddLog(LogLevel.Info, "Chat", $"Chat history cleared for session: {sessionId}");
+        _logService.AddLog(NemesisLogLevel.Info, "Chat", $"Chat history cleared for session: {sessionId}");
     }
 
     public async Task<TaskPlan> CreatePlan(string objective)
     {
-        _logService.AddLog(LogLevel.Info, "Planner", $"Creating plan for: {objective}");
+        _logService.AddLog(NemesisLogLevel.Info, "Planner", $"Creating plan for: {objective}");
 
         try
         {
             var plan = await _orchestrator.CreatePlanAsync(objective);
-            _logService.AddLog(LogLevel.Info, "Planner", $"Plan created with {plan.Steps.Count} steps");
+            _logService.AddLog(NemesisLogLevel.Info, "Planner", $"Plan created with {plan.Steps.Count} steps");
             return plan;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Plan creation failed");
-            _logService.AddLog(LogLevel.Error, "Planner", $"Plan creation failed: {ex.Message}");
+            _logService.AddLog(NemesisLogLevel.Error, "Planner", $"Plan creation failed: {ex.Message}");
             throw;
         }
     }
@@ -183,12 +184,12 @@ public class AgentHub : Hub
 
     public async Task<bool> ApplyPatch(string patchId)
     {
-        _logService.AddLog(LogLevel.Info, "Patch", $"Applying patch: {patchId}");
+        _logService.AddLog(NemesisLogLevel.Info, "Patch", $"Applying patch: {patchId}");
 
         var patch = _patchTool.GetPendingPatch(patchId);
         if (patch == null)
         {
-            _logService.AddLog(LogLevel.Error, "Patch", $"Patch not found: {patchId}");
+            _logService.AddLog(NemesisLogLevel.Error, "Patch", $"Patch not found: {patchId}");
             return false;
         }
 
@@ -197,12 +198,12 @@ public class AgentHub : Hub
         if (success)
         {
             _patchTool.RemovePendingPatch(patchId);
-            _logService.AddLog(LogLevel.Info, "Patch", $"Patch applied successfully: {patch.FilePath}");
+            _logService.AddLog(NemesisLogLevel.Info, "Patch", $"Patch applied successfully: {patch.FilePath}");
             await Clients.Caller.SendAsync("PatchApplied", patch);
         }
         else
         {
-            _logService.AddLog(LogLevel.Error, "Patch", $"Patch failed: {patch.ErrorMessage}");
+            _logService.AddLog(NemesisLogLevel.Error, "Patch", $"Patch failed: {patch.ErrorMessage}");
         }
 
         return success;
@@ -210,7 +211,7 @@ public class AgentHub : Hub
 
     public async Task<bool> RollbackPatch(string patchId)
     {
-        _logService.AddLog(LogLevel.Info, "Patch", $"Rolling back patch: {patchId}");
+        _logService.AddLog(NemesisLogLevel.Info, "Patch", $"Rolling back patch: {patchId}");
 
         var patch = _patchTool.GetPendingPatch(patchId);
         if (patch == null)
@@ -222,7 +223,7 @@ public class AgentHub : Hub
 
         if (success)
         {
-            _logService.AddLog(LogLevel.Info, "Patch", $"Patch rolled back: {patch.FilePath}");
+            _logService.AddLog(NemesisLogLevel.Info, "Patch", $"Patch rolled back: {patch.FilePath}");
             await Clients.Caller.SendAsync("PatchRolledBack", patch);
         }
 
