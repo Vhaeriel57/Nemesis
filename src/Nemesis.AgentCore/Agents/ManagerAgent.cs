@@ -110,8 +110,9 @@ Project context: {context.ProjectPath ?? "No project loaded"}";
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            var prompt = FormatMessagesAsPrompt(messages);
             var llmResponse = await LlmProvider.CompleteAsync(
-                messages,
+                prompt,
                 SystemPrompt,
                 0.7,
                 4096,
@@ -210,8 +211,9 @@ Include:
 
             messages.Add(new ChatMessage { Role = "user", Content = synthesisPrompt });
 
+            var synthesisFullPrompt = FormatMessagesAsPrompt(messages);
             var synthesis = await LlmProvider.CompleteAsync(
-                messages,
+                synthesisFullPrompt,
                 SystemPrompt,
                 0.7,
                 4096,
@@ -303,6 +305,23 @@ Include:
         {
             yield return text.Substring(i, Math.Min(chunkSize, text.Length - i));
         }
+    }
+
+    private string FormatMessagesAsPrompt(List<ChatMessage> messages)
+    {
+        var sb = new StringBuilder();
+        foreach (var msg in messages)
+        {
+            var role = msg.Role?.ToLowerInvariant() switch
+            {
+                "system" => "System",
+                "assistant" => "Assistant",
+                _ => "User"
+            };
+            sb.AppendLine($"{role}: {msg.Content}");
+            sb.AppendLine();
+        }
+        return sb.ToString();
     }
 
     private class DelegationRequest
