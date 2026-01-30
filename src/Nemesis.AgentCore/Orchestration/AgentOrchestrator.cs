@@ -23,7 +23,9 @@ public class AgentOrchestrator
     public event Action<AgentTask>? TaskStarted;
     public event Action<AgentTask>? TaskCompleted;
     public event Action<AgentTask>? TaskFailed;
+#pragma warning disable CS0067 // Event is never used - reserved for future implementation
     public event Action<string, string>? MessageReceived;
+#pragma warning restore CS0067
 
     public AgentOrchestrator(
         IEnumerable<IAgent> agents,

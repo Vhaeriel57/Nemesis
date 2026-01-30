@@ -309,7 +309,7 @@ public abstract class BaseAgent : IAgent
 
         foreach (var call in toolCalls.Where(c => c.Name == "web_search" && c.Result != null))
         {
-            var urlMatches = Regex.Matches(call.Result, @"URL:\s*(https?://[^\s]+)");
+            var urlMatches = Regex.Matches(call.Result!, @"URL:\s*(https?://[^\s]+)");
             foreach (Match match in urlMatches)
             {
                 citations.Add(match.Groups[1].Value);
