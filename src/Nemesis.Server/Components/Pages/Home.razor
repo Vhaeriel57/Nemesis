@@ -6,7 +6,6 @@
 @inject Nemesis.Server.Services.ProjectService ProjectService
 @inject Nemesis.Server.Services.LogService LogService
 @inject ILlmProvider LlmProvider
-@inject IJSRuntime JSRuntime
 
 <PageTitle>Project - Nemesis</PageTitle>
 
@@ -16,18 +15,14 @@
     <section class="section">
         <h2>Select Unity Project</h2>
         <div class="input-group">
-            <input type="text" @bind="projectPath" placeholder="Enter Unity project path (e.g., C:\Projects\MyGame)" class="input-text" />
-            <button class="btn btn-primary" @onclick="BrowseProject">Browse</button>
-        </div>
-        <p class="help-text">Enter the root folder of your Unity project (the one containing Assets/)</p>
-    </section>
-
-    <section class="section">
-        <h2>Index Project</h2>
-        <div class="button-group">
+            <input type="text" @bind="projectPath" @bind:event="oninput" placeholder="Enter Unity project path (e.g., C:\Projects\MyGame)" class="input-text" />
             <button class="btn btn-primary" @onclick="StartIndexing" disabled="@(isIndexing || string.IsNullOrEmpty(projectPath))">
-                @(isIndexing ? "Indexing..." : "Index Project")
+                @(isIndexing ? "Indexing..." : "Load & Index")
             </button>
+        </div>
+        <p class="help-text">Enter the root folder of your Unity project (the one containing Assets/) and click "Load & Index"</p>
+
+        <div class="button-group" style="margin-top: 10px;">
             <button class="btn btn-secondary" @onclick="ClearIndex" disabled="@(!ProjectService.IsProjectIndexed)">
                 Clear Index
             </button>
@@ -140,24 +135,6 @@
         }
 
         await CheckLlmStatus();
-    }
-
-    private async Task BrowseProject()
-    {
-        try
-        {
-            var selectedPath = await JSRuntime.InvokeAsync<string>("pickFolder", projectPath);
-            if (!string.IsNullOrEmpty(selectedPath))
-            {
-                projectPath = selectedPath;
-                LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Info, "UI", $"Project path selected: {projectPath}");
-                StateHasChanged();
-            }
-        }
-        catch (Exception ex)
-        {
-            LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Error, "UI", $"Browse failed: {ex.Message}");
-        }
     }
 
     private async Task StartIndexing()
