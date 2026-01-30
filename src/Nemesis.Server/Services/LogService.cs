@@ -1,4 +1,5 @@
 using Nemesis.Shared.DTOs;
+using NemesisLogLevel = Nemesis.Shared.DTOs.LogLevel;
 
 namespace Nemesis.Server.Services;
 
@@ -10,7 +11,7 @@ public class LogService
 
     public event Action<LogEntry>? LogAdded;
 
-    public void AddLog(LogLevel level, string source, string message, string? details = null)
+    public void AddLog(NemesisLogLevel level, string source, string message, string? details = null)
     {
         var entry = new LogEntry
         {
