@@ -4,3 +4,15 @@ C:\Users\maxim\Nemesis\src\Nemesis.AgentCore\obj\Debug\net8.0\Nemesis.AgentCore.
 C:\Users\maxim\Nemesis\src\Nemesis.AgentCore\obj\Debug\net8.0\Nemesis.AgentCore.AssemblyInfo.cs
 C:\Users\maxim\Nemesis\src\Nemesis.AgentCore\obj\Debug\net8.0\Nemesis.AgentCore.csproj.CoreCompileInputs.cache
 C:\Users\maxim\Nemesis\src\Nemesis.AgentCore\obj\Debug\net8.0\Nemesis.AgentCore.sourcelink.json
+C:\Users\maxim\Nemesis\src\Nemesis.AgentCore\bin\Debug\net8.0\Nemesis.AgentCore.deps.json
+C:\Users\maxim\Nemesis\src\Nemesis.AgentCore\bin\Debug\net8.0\Nemesis.AgentCore.dll
+C:\Users\maxim\Nemesis\src\Nemesis.AgentCore\bin\Debug\net8.0\Nemesis.AgentCore.pdb
+C:\Users\maxim\Nemesis\src\Nemesis.AgentCore\bin\Debug\net8.0\Nemesis.CodeAnalysis.dll
+C:\Users\maxim\Nemesis\src\Nemesis.AgentCore\bin\Debug\net8.0\Nemesis.Shared.dll
+C:\Users\maxim\Nemesis\src\Nemesis.AgentCore\bin\Debug\net8.0\Nemesis.CodeAnalysis.pdb
+C:\Users\maxim\Nemesis\src\Nemesis.AgentCore\bin\Debug\net8.0\Nemesis.Shared.pdb
+C:\Users\maxim\Nemesis\src\Nemesis.AgentCore\obj\Debug\net8.0\Nemesis..373142DC.Up2Date
+C:\Users\maxim\Nemesis\src\Nemesis.AgentCore\obj\Debug\net8.0\Nemesis.AgentCore.dll
+C:\Users\maxim\Nemesis\src\Nemesis.AgentCore\obj\Debug\net8.0\refint\Nemesis.AgentCore.dll
+C:\Users\maxim\Nemesis\src\Nemesis.AgentCore\obj\Debug\net8.0\Nemesis.AgentCore.pdb
+C:\Users\maxim\Nemesis\src\Nemesis.AgentCore\obj\Debug\net8.0\ref\Nemesis.AgentCore.dll
