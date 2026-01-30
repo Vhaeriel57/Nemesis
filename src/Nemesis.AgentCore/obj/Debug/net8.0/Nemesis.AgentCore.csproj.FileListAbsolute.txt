@@ -1,0 +1,6 @@
+C:\Users\maxim\Nemesis\src\Nemesis.AgentCore\obj\Debug\net8.0\Nemesis.AgentCore.csproj.AssemblyReference.cache
+C:\Users\maxim\Nemesis\src\Nemesis.AgentCore\obj\Debug\net8.0\Nemesis.AgentCore.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\maxim\Nemesis\src\Nemesis.AgentCore\obj\Debug\net8.0\Nemesis.AgentCore.AssemblyInfoInputs.cache
+C:\Users\maxim\Nemesis\src\Nemesis.AgentCore\obj\Debug\net8.0\Nemesis.AgentCore.AssemblyInfo.cs
+C:\Users\maxim\Nemesis\src\Nemesis.AgentCore\obj\Debug\net8.0\Nemesis.AgentCore.csproj.CoreCompileInputs.cache
+C:\Users\maxim\Nemesis\src\Nemesis.AgentCore\obj\Debug\net8.0\Nemesis.AgentCore.sourcelink.json
