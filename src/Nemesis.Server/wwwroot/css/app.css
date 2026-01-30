@@ -1311,3 +1311,106 @@ details summary:hover {
     color: var(--text-muted);
     margin-right: 0.25rem;
 }
+
+/* ============================================
+   Project Cache & Recent Projects Styles
+   ============================================ */
+
+.recent-projects {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.recent-project-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    transition: all 0.2s ease;
+}
+
+.recent-project-item:hover {
+    border-color: var(--accent-primary);
+    background: var(--bg-tertiary);
+}
+
+.recent-project-item.selected {
+    border-color: var(--accent-primary);
+    background: rgba(233, 69, 96, 0.1);
+}
+
+.project-info-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    cursor: pointer;
+    flex: 1;
+}
+
+.project-name {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.project-path {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+}
+
+.project-accessed {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.project-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.cache-status {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+    padding: 0.5rem 1rem;
+    border-radius: var(--border-radius);
+    font-size: 0.85rem;
+}
+
+.cache-status.from-cache {
+    background: rgba(0, 210, 106, 0.1);
+    border: 1px solid var(--accent-success);
+}
+
+.cache-status.fresh {
+    background: rgba(30, 144, 255, 0.1);
+    border: 1px solid var(--accent-info);
+}
+
+.cache-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 1rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    background: var(--accent-success);
+    color: white;
+}
+
+.cache-badge.fresh {
+    background: var(--accent-info);
+}
+
+.cache-info {
+    color: var(--text-secondary);
+}
+
+.btn-small {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.8rem;
+}

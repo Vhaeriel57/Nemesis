@@ -1,8 +1,11 @@
 @page "/"
 @using Nemesis.CodeAnalysis.Indexing
+@using Nemesis.CodeAnalysis.Models
 @using Nemesis.AgentCore.RAG
+@using Nemesis.AgentCore.Services
 @inject CodeIndexer CodeIndexer
 @inject RagService RagService
+@inject ProjectCacheService ProjectCacheService
 @inject Nemesis.Server.Services.ProjectService ProjectService
 @inject Nemesis.Server.Services.LogService LogService
 @inject ILlmProvider LlmProvider
@@ -12,19 +15,67 @@
 <div class="page-container">
     <h1>Project Setup</h1>
 
+    @if (recentProjects.Any())
+    {
+        <section class="section">
+            <h2>Recent Projects</h2>
+            <div class="recent-projects">
+                @foreach (var project in recentProjects)
+                {
+                    <div class="recent-project-item @(project.ProjectPath == projectPath ? "selected" : "")">
+                        <div class="project-info-row" @onclick="() => SelectRecentProject(project.ProjectPath)">
+                            <span class="project-name">@project.ProjectName</span>
+                            <span class="project-path">@project.ProjectPath</span>
+                            <span class="project-accessed">Last used: @project.LastAccessedAt.ToLocalTime().ToString("g")</span>
+                        </div>
+                        <div class="project-actions">
+                            <button class="btn btn-small btn-primary" @onclick="() => LoadFromCache(project.ProjectPath)" disabled="@isIndexing">
+                                Load
+                            </button>
+                            <button class="btn btn-small btn-secondary" @onclick="() => ClearProjectCacheItem(project.ProjectPath)">
+                                Remove
+                            </button>
+                        </div>
+                    </div>
+                }
+            </div>
+        </section>
+    }
+
     <section class="section">
         <h2>Select Unity Project</h2>
         <div class="input-group">
             <input type="text" @bind="projectPath" @bind:event="oninput" placeholder="Enter Unity project path (e.g., C:\Projects\MyGame)" class="input-text" />
-            <button class="btn btn-primary" @onclick="StartIndexing" disabled="@(isIndexing || string.IsNullOrEmpty(projectPath))">
-                @(isIndexing ? "Indexing..." : "Load & Index")
+            <button class="btn btn-primary" @onclick="LoadFromCache" disabled="@(isIndexing || string.IsNullOrEmpty(projectPath))">
+                @(isIndexing ? loadingStatus : "Load Project")
+            </button>
+            <button class="btn btn-secondary" @onclick="ForceReindex" disabled="@(isIndexing || string.IsNullOrEmpty(projectPath))" title="Force re-index ignoring cache">
+                Re-Index
             </button>
         </div>
-        <p class="help-text">Enter the root folder of your Unity project (the one containing Assets/) and click "Load & Index"</p>
+        <p class="help-text">Enter the root folder of your Unity project (the one containing Assets/). Cached projects load instantly!</p>
+
+        @if (cacheStatus != null)
+        {
+            <div class="cache-status @(cacheStatus.IsFromCache ? "from-cache" : "fresh")">
+                @if (cacheStatus.IsFromCache)
+                {
+                    <span class="cache-badge">Loaded from cache</span>
+                    <span class="cache-info">Cached: @cacheStatus.CachedAt.ToLocalTime().ToString("g")</span>
+                }
+                else
+                {
+                    <span class="cache-badge fresh">Freshly indexed</span>
+                }
+            </div>
+        }
 
         <div class="button-group" style="margin-top: 10px;">
             <button class="btn btn-secondary" @onclick="ClearIndex" disabled="@(!ProjectService.IsProjectIndexed)">
                 Clear Index
+            </button>
+            <button class="btn btn-secondary" @onclick="ClearAllCaches" disabled="@(!recentProjects.Any())">
+                Clear All Caches
             </button>
         </div>
 
@@ -125,25 +176,61 @@
     private string projectPath = "";
     private bool isIndexing = false;
     private bool llmConnected = false;
+    private string loadingStatus = "Loading...";
     private IndexingProgress indexProgress = new();
+    private List<ProjectCacheEntry> recentProjects = new();
+    private CacheStatusInfo? cacheStatus = null;
+
+    private class CacheStatusInfo
+    {
+        public bool IsFromCache { get; set; }
+        public DateTime CachedAt { get; set; }
+    }
 
     protected override async Task OnInitializedAsync()
     {
+        // Load recent projects
+        recentProjects = ProjectCacheService.GetRecentProjects();
+
         if (ProjectService.CurrentProject != null)
         {
             projectPath = ProjectService.CurrentProject.Path;
+        }
+        else
+        {
+            // Auto-load last used project if available
+            var lastUsedPath = ProjectCacheService.GetLastUsedProjectPath();
+            if (!string.IsNullOrEmpty(lastUsedPath))
+            {
+                projectPath = lastUsedPath;
+                await LoadFromCache();
+            }
         }
 
         await CheckLlmStatus();
     }
 
-    private async Task StartIndexing()
+    private void SelectRecentProject(string path)
     {
-        if (string.IsNullOrEmpty(projectPath))
+        projectPath = path;
+        StateHasChanged();
+    }
+
+    private async Task LoadFromCache()
+    {
+        await LoadFromCache(projectPath);
+    }
+
+    private async Task LoadFromCache(string path)
+    {
+        if (string.IsNullOrEmpty(path))
             return;
 
+        projectPath = path;
         isIndexing = true;
+        loadingStatus = "Checking cache...";
         indexProgress = new IndexingProgress();
+        cacheStatus = null;
         StateHasChanged();
 
         try
@@ -151,25 +238,44 @@
             var progress = new Progress<IndexingProgress>(p =>
             {
                 indexProgress = p;
+                loadingStatus = p.Phase;
                 InvokeAsync(StateHasChanged);
             });
 
-            var projectInfo = await CodeIndexer.IndexProjectAsync(projectPath, progress);
-            ProjectService.CurrentProject = projectInfo;
+            // Try to load from cache first
+            var (cachedIndex, cacheInfo) = await ProjectCacheService.LoadProjectIndexAsync(path);
 
-            // Index for RAG
-            var index = CodeIndexer.GetIndex();
-            if (index != null)
+            if (cachedIndex != null && cacheInfo != null)
             {
-                await RagService.IndexProjectAsync(index, progress);
+                // Load from cache
+                loadingStatus = "Loading from cache...";
+                StateHasChanged();
+
+                CodeIndexer.LoadIndex(cachedIndex);
+                ProjectService.CurrentProject = cacheInfo.ProjectInfo;
+
+                cacheStatus = new CacheStatusInfo
+                {
+                    IsFromCache = true,
+                    CachedAt = cacheInfo.CachedAt
+                };
+
+                LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Info, "Cache",
+                    $"Project loaded from cache: {cacheInfo.ProjectInfo.TotalFiles} files");
+            }
+            else
+            {
+                // Full indexing required
+                await PerformFullIndexing(path, progress);
+                cacheStatus = new CacheStatusInfo { IsFromCache = false };
             }
 
-            LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Info, "Indexer",
-                $"Project indexed: {projectInfo.TotalFiles} files, {projectInfo.TotalTypes} types");
+            // Refresh recent projects list
+            recentProjects = ProjectCacheService.GetRecentProjects();
         }
         catch (Exception ex)
         {
-            LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Error, "Indexer", $"Indexing failed: {ex.Message}");
+            LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Error, "Cache", $"Load failed: {ex.Message}");
         }
         finally
         {
@@ -178,10 +284,92 @@
         }
     }
 
+    private async Task ForceReindex()
+    {
+        if (string.IsNullOrEmpty(projectPath))
+            return;
+
+        isIndexing = true;
+        loadingStatus = "Re-indexing...";
+        indexProgress = new IndexingProgress();
+        cacheStatus = null;
+        StateHasChanged();
+
+        try
+        {
+            var progress = new Progress<IndexingProgress>(p =>
+            {
+                indexProgress = p;
+                loadingStatus = p.Phase;
+                InvokeAsync(StateHasChanged);
+            });
+
+            // Clear existing cache first
+            ProjectCacheService.ClearProjectCache(projectPath);
+
+            await PerformFullIndexing(projectPath, progress);
+            cacheStatus = new CacheStatusInfo { IsFromCache = false };
+
+            // Refresh recent projects list
+            recentProjects = ProjectCacheService.GetRecentProjects();
+        }
+        catch (Exception ex)
+        {
+            LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Error, "Indexer", $"Re-indexing failed: {ex.Message}");
+        }
+        finally
+        {
+            isIndexing = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task PerformFullIndexing(string path, IProgress<IndexingProgress> progress)
+    {
+        var projectInfo = await CodeIndexer.IndexProjectAsync(path, progress);
+        ProjectService.CurrentProject = projectInfo;
+
+        // Index for RAG
+        var index = CodeIndexer.GetIndex();
+        if (index != null)
+        {
+            await RagService.IndexProjectAsync(index, progress);
+
+            // Save to cache
+            if (index is ProjectIndex projectIndex)
+            {
+                await ProjectCacheService.SaveProjectIndexAsync(projectIndex, projectInfo);
+                LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Info, "Cache", "Project cached for future use");
+            }
+        }
+
+        LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Info, "Indexer",
+            $"Project indexed: {projectInfo.TotalFiles} files, {projectInfo.TotalTypes} types");
+    }
+
+    private void ClearProjectCacheItem(string path)
+    {
+        ProjectCacheService.ClearProjectCache(path);
+        recentProjects = ProjectCacheService.GetRecentProjects();
+        StateHasChanged();
+    }
+
+    private async Task ClearAllCaches()
+    {
+        ProjectCacheService.ClearAllCache();
+        await RagService.ClearIndexAsync();
+        ProjectService.CurrentProject = null;
+        recentProjects = new List<ProjectCacheEntry>();
+        cacheStatus = null;
+        LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Info, "Cache", "All caches cleared");
+        StateHasChanged();
+    }
+
     private async Task ClearIndex()
     {
         await RagService.ClearIndexAsync();
         ProjectService.CurrentProject = null;
+        cacheStatus = null;
         LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Info, "Indexer", "Index cleared");
     }
 

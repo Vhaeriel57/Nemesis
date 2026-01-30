@@ -100,6 +100,9 @@ public static class ServiceCollectionExtensions
             return new ConversationService(conversationsPath, logger);
         });
 
+        // Project cache service
+        services.AddSingleton<ProjectCacheService>();
+
         // Orchestrator
         services.AddSingleton<AgentOrchestrator>();
 

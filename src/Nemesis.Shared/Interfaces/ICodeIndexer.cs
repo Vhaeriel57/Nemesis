@@ -38,6 +38,16 @@ public interface ICodeIndexer
     Task<Dictionary<string, List<string>>> GetTypeGraphAsync(
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Loads a pre-built project index (from cache)
+    /// </summary>
+    void LoadIndex(object projectIndex);
+
+    /// <summary>
+    /// Gets the current project index for caching
+    /// </summary>
+    object? GetIndex();
+
     bool IsIndexed { get; }
     string? CurrentProjectPath { get; }
 }
