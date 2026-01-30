@@ -378,11 +378,26 @@ public class CodeIndexer : ICodeIndexer
         }
     }
 
-    public ProjectIndex? GetIndex()
+    public object? GetIndex()
     {
         lock (_lock)
         {
             return _currentIndex;
+        }
+    }
+
+    public void LoadIndex(object projectIndex)
+    {
+        if (projectIndex is ProjectIndex index)
+        {
+            lock (_lock)
+            {
+                _currentIndex = index;
+            }
+        }
+        else
+        {
+            throw new ArgumentException("Invalid project index type", nameof(projectIndex));
         }
     }
 }

@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.SignalR;
 using Nemesis.AgentCore.Orchestration;
 using Nemesis.AgentCore.RAG;
+using Nemesis.AgentCore.Services;
 using Nemesis.AgentCore.Tools;
 using Nemesis.CodeAnalysis.Indexing;
+using Nemesis.CodeAnalysis.Models;
 using Nemesis.Server.Services;
 using Nemesis.Shared.DTOs;
 using Nemesis.Shared.Interfaces;
@@ -18,6 +20,7 @@ public class AgentHub : Hub
     private readonly RagService _ragService;
     private readonly PatchTool _patchTool;
     private readonly ProjectService _projectService;
+    private readonly ProjectCacheService _projectCacheService;
     private readonly LogService _logService;
     private readonly ILlmProvider _llmProvider;
     private readonly ILogger<AgentHub> _logger;
@@ -28,6 +31,7 @@ public class AgentHub : Hub
         RagService ragService,
         PatchTool patchTool,
         ProjectService projectService,
+        ProjectCacheService projectCacheService,
         LogService logService,
         ILlmProvider llmProvider,
         ILogger<AgentHub> logger)
@@ -37,6 +41,7 @@ public class AgentHub : Hub
         _ragService = ragService;
         _patchTool = patchTool;
         _projectService = projectService;
+        _projectCacheService = projectCacheService;
         _logService = logService;
         _llmProvider = llmProvider;
         _logger = logger;
@@ -53,6 +58,15 @@ public class AgentHub : Hub
         {
             Provider = _llmProvider.Name,
             IsAvailable = _llmProvider.IsAvailable
+        });
+
+        // Send recent projects for cache
+        var recentProjects = _projectCacheService.GetRecentProjects();
+        var lastUsedPath = _projectCacheService.GetLastUsedProjectPath();
+        await Clients.Caller.SendAsync("RecentProjectsUpdated", new
+        {
+            RecentProjects = recentProjects,
+            LastUsedProjectPath = lastUsedPath
         });
 
         await base.OnConnectedAsync();
@@ -85,9 +99,24 @@ public class AgentHub : Hub
             if (index != null)
             {
                 await _ragService.IndexProjectAsync(index, progress);
+
+                // Save to cache
+                if (index is ProjectIndex projectIndex)
+                {
+                    await _projectCacheService.SaveProjectIndexAsync(projectIndex, projectInfo);
+                    _logService.AddLog(NemesisLogLevel.Info, "Cache", $"Project cache saved: {projectPath}");
+                }
             }
 
             _logService.AddLog(NemesisLogLevel.Info, "Indexer", $"Indexing complete: {projectInfo.TotalFiles} files, {projectInfo.TotalTypes} types");
+
+            // Update recent projects list
+            var recentProjects = _projectCacheService.GetRecentProjects();
+            await Clients.Caller.SendAsync("RecentProjectsUpdated", new
+            {
+                RecentProjects = recentProjects,
+                LastUsedProjectPath = projectPath
+            });
 
             await Clients.Caller.SendAsync("ProjectInfoUpdated", projectInfo);
             return projectInfo;
@@ -98,6 +127,88 @@ public class AgentHub : Hub
             _logService.AddLog(NemesisLogLevel.Error, "Indexer", $"Indexing failed: {ex.Message}");
             throw;
         }
+    }
+
+    /// <summary>
+    /// Loads a project from cache if available, otherwise performs full indexing
+    /// </summary>
+    public async Task<ProjectInfo> LoadProjectFromCache(string projectPath)
+    {
+        _logger.LogInformation("Loading project from cache: {Path}", projectPath);
+        _logService.AddLog(NemesisLogLevel.Info, "Cache", $"Checking cache for: {projectPath}");
+
+        var progress = new Progress<IndexingProgress>(async p =>
+        {
+            await Clients.Caller.SendAsync("IndexingProgress", p);
+        });
+
+        try
+        {
+            // Try to load from cache
+            var (cachedIndex, cacheInfo) = await _projectCacheService.LoadProjectIndexAsync(projectPath);
+
+            if (cachedIndex != null && cacheInfo != null)
+            {
+                // Load cached index
+                _codeIndexer.LoadIndex(cachedIndex);
+                _projectService.CurrentProject = cacheInfo.ProjectInfo;
+
+                _logService.AddLog(NemesisLogLevel.Info, "Cache",
+                    $"Project loaded from cache: {cacheInfo.ProjectInfo.TotalFiles} files, cached at {cacheInfo.CachedAt:g}");
+
+                await Clients.Caller.SendAsync("ProjectInfoUpdated", cacheInfo.ProjectInfo);
+                await Clients.Caller.SendAsync("CacheStatusUpdated", new
+                {
+                    IsFromCache = true,
+                    CachedAt = cacheInfo.CachedAt,
+                    LastAccessedAt = cacheInfo.LastAccessedAt
+                });
+
+                return cacheInfo.ProjectInfo;
+            }
+
+            // Cache not valid, perform full indexing
+            _logService.AddLog(NemesisLogLevel.Info, "Cache", "Cache invalid or not found, performing full indexing...");
+            return await IndexProject(projectPath);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load from cache, falling back to full indexing");
+            _logService.AddLog(NemesisLogLevel.Warning, "Cache", $"Cache load failed: {ex.Message}, falling back to full indexing");
+            return await IndexProject(projectPath);
+        }
+    }
+
+    /// <summary>
+    /// Gets list of recent projects
+    /// </summary>
+    public List<ProjectCacheEntry> GetRecentProjects()
+    {
+        return _projectCacheService.GetRecentProjects();
+    }
+
+    /// <summary>
+    /// Clears cache for a specific project
+    /// </summary>
+    public void ClearProjectCache(string projectPath)
+    {
+        _projectCacheService.ClearProjectCache(projectPath);
+        _logService.AddLog(NemesisLogLevel.Info, "Cache", $"Cache cleared for: {projectPath}");
+    }
+
+    /// <summary>
+    /// Clears all project caches
+    /// </summary>
+    public async Task ClearAllCache()
+    {
+        _projectCacheService.ClearAllCache();
+        _logService.AddLog(NemesisLogLevel.Info, "Cache", "All project caches cleared");
+
+        await Clients.Caller.SendAsync("RecentProjectsUpdated", new
+        {
+            RecentProjects = new List<ProjectCacheEntry>(),
+            LastUsedProjectPath = (string?)null
+        });
     }
 
     public async Task SendMessage(string message, string agentType, string sessionId)
