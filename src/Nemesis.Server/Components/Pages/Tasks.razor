@@ -1,0 +1,263 @@
+@page "/tasks"
+@using Nemesis.AgentCore.Orchestration
+@inject AgentOrchestrator Orchestrator
+@inject Nemesis.Server.Services.LogService LogService
+
+<PageTitle>Tasks - Nemesis</PageTitle>
+
+<div class="page-container">
+    <h1>Task Management</h1>
+
+    <section class="section">
+        <h2>Create New Task</h2>
+        <div class="task-form">
+            <div class="form-group">
+                <label>Objective</label>
+                <textarea @bind="newTaskObjective" rows="3" class="input-text"
+                          placeholder="Describe what you want to accomplish..."></textarea>
+            </div>
+            <div class="form-group">
+                <label>Assigned Agent</label>
+                <select @bind="newTaskAgent" class="input-select">
+                    <option value="SeniorUnityCSharp">Unity Expert</option>
+                    <option value="Generalist">Generalist</option>
+                    <option value="Researcher">Researcher</option>
+                </select>
+            </div>
+            <div class="button-group">
+                <button class="btn btn-primary" @onclick="CreateTask" disabled="@string.IsNullOrWhiteSpace(newTaskObjective)">
+                    Create Task
+                </button>
+                <button class="btn btn-secondary" @onclick="CreatePlan" disabled="@string.IsNullOrWhiteSpace(newTaskObjective)">
+                    Create Plan First
+                </button>
+            </div>
+        </div>
+    </section>
+
+    @if (currentPlan != null)
+    {
+        <section class="section">
+            <h2>Current Plan</h2>
+            <div class="plan-card">
+                <h3>@currentPlan.Objective</h3>
+                <div class="plan-steps">
+                    @foreach (var step in currentPlan.Steps)
+                    {
+                        <div class="plan-step">
+                            <span class="step-number">@step.Order</span>
+                            <span class="step-description">@step.Description</span>
+                            <span class="step-agent">@step.SuggestedAgent</span>
+                            @if (step.RequiresWebSearch)
+                            {
+                                <span class="step-badge">Web Search</span>
+                            }
+                        </div>
+                    }
+                </div>
+                <div class="button-group">
+                    <button class="btn btn-primary" @onclick="ExecutePlan">Execute Plan</button>
+                    <button class="btn btn-secondary" @onclick="ClearPlan">Discard</button>
+                </div>
+            </div>
+        </section>
+    }
+
+    <section class="section">
+        <h2>Task Queue</h2>
+        @if (!queuedTasks.Any() && currentTask == null)
+        {
+            <p class="empty-message">No tasks in queue.</p>
+        }
+        else
+        {
+            @if (currentTask != null)
+            {
+                <div class="task-card current">
+                    <div class="task-header">
+                        <span class="task-status in-progress">In Progress</span>
+                        <span class="task-agent">@currentTask.AssignedAgent</span>
+                    </div>
+                    <h3>@currentTask.Title</h3>
+                    <p>@currentTask.Description</p>
+                    @if (currentTask.Steps.Any())
+                    {
+                        <div class="task-progress">
+                            Step @currentTask.CurrentStep of @currentTask.Steps.Count
+                        </div>
+                    }
+                </div>
+            }
+
+            @foreach (var task in queuedTasks)
+            {
+                <div class="task-card">
+                    <div class="task-header">
+                        <span class="task-status @task.Status.ToString().ToLower()">@task.Status</span>
+                        <span class="task-agent">@task.AssignedAgent</span>
+                    </div>
+                    <h3>@task.Title</h3>
+                    <p>@task.Description</p>
+                </div>
+            }
+        }
+    </section>
+
+    <section class="section">
+        <h2>Completed Tasks</h2>
+        @if (!completedTasks.Any())
+        {
+            <p class="empty-message">No completed tasks.</p>
+        }
+        else
+        {
+            @foreach (var task in completedTasks.TakeLast(10).Reverse())
+            {
+                <div class="task-card completed">
+                    <div class="task-header">
+                        <span class="task-status @task.Status.ToString().ToLower()">@task.Status</span>
+                        <span class="task-time">@task.CompletedAt?.ToLocalTime().ToString("g")</span>
+                    </div>
+                    <h3>@task.Title</h3>
+                    @if (!string.IsNullOrEmpty(task.Result))
+                    {
+                        <details>
+                            <summary>View Result</summary>
+                            <pre class="task-result">@task.Result</pre>
+                        </details>
+                    }
+                    @if (!string.IsNullOrEmpty(task.ErrorMessage))
+                    {
+                        <p class="task-error">Error: @task.ErrorMessage</p>
+                    }
+                </div>
+            }
+        }
+    </section>
+</div>
+
+@code {
+    private string newTaskObjective = "";
+    private string newTaskAgent = "SeniorUnityCSharp";
+    private TaskPlan? currentPlan;
+    private AgentTask? currentTask;
+    private List<AgentTask> queuedTasks = new();
+    private List<AgentTask> completedTasks = new();
+    private bool isProcessing = false;
+
+    protected override void OnInitialized()
+    {
+        currentTask = Orchestrator.GetCurrentTask();
+        queuedTasks = Orchestrator.GetQueuedTasks().ToList();
+
+        Orchestrator.TaskStarted += OnTaskStarted;
+        Orchestrator.TaskCompleted += OnTaskCompleted;
+        Orchestrator.TaskFailed += OnTaskFailed;
+    }
+
+    private async Task CreateTask()
+    {
+        if (string.IsNullOrWhiteSpace(newTaskObjective))
+            return;
+
+        var task = new AgentTask
+        {
+            Title = newTaskObjective.Length > 50 ? newTaskObjective.Substring(0, 50) + "..." : newTaskObjective,
+            Description = newTaskObjective,
+            AssignedAgent = Enum.Parse<AgentType>(newTaskAgent)
+        };
+
+        Orchestrator.QueueTask(task);
+        queuedTasks = Orchestrator.GetQueuedTasks().ToList();
+
+        newTaskObjective = "";
+        StateHasChanged();
+
+        if (!isProcessing)
+        {
+            isProcessing = true;
+            await Orchestrator.ProcessQueueAsync();
+            isProcessing = false;
+        }
+    }
+
+    private async Task CreatePlan()
+    {
+        if (string.IsNullOrWhiteSpace(newTaskObjective))
+            return;
+
+        try
+        {
+            currentPlan = await Orchestrator.CreatePlanAsync(newTaskObjective);
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Error, "Planner", $"Plan creation failed: {ex.Message}");
+        }
+    }
+
+    private async Task ExecutePlan()
+    {
+        if (currentPlan == null)
+            return;
+
+        foreach (var step in currentPlan.Steps)
+        {
+            var task = new AgentTask
+            {
+                Title = $"Step {step.Order}: {step.Description.Substring(0, Math.Min(40, step.Description.Length))}...",
+                Description = step.Description,
+                AssignedAgent = step.SuggestedAgent
+            };
+
+            Orchestrator.QueueTask(task);
+        }
+
+        queuedTasks = Orchestrator.GetQueuedTasks().ToList();
+        currentPlan = null;
+        StateHasChanged();
+
+        if (!isProcessing)
+        {
+            isProcessing = true;
+            await Orchestrator.ProcessQueueAsync();
+            isProcessing = false;
+        }
+    }
+
+    private void ClearPlan()
+    {
+        currentPlan = null;
+    }
+
+    private void OnTaskStarted(AgentTask task)
+    {
+        currentTask = task;
+        queuedTasks = Orchestrator.GetQueuedTasks().ToList();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnTaskCompleted(AgentTask task)
+    {
+        completedTasks.Add(task);
+        currentTask = Orchestrator.GetCurrentTask();
+        queuedTasks = Orchestrator.GetQueuedTasks().ToList();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnTaskFailed(AgentTask task)
+    {
+        completedTasks.Add(task);
+        currentTask = Orchestrator.GetCurrentTask();
+        queuedTasks = Orchestrator.GetQueuedTasks().ToList();
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        Orchestrator.TaskStarted -= OnTaskStarted;
+        Orchestrator.TaskCompleted -= OnTaskCompleted;
+        Orchestrator.TaskFailed -= OnTaskFailed;
+    }
+}

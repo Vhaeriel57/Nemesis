@@ -1,0 +1,260 @@
+@page "/chat"
+@using Nemesis.AgentCore.Orchestration
+@inject AgentOrchestrator Orchestrator
+@inject Nemesis.Server.Services.ProjectService ProjectService
+@inject Nemesis.Server.Services.LogService LogService
+@inject IJSRuntime JS
+
+<PageTitle>Chat - Nemesis</PageTitle>
+
+<div class="page-container chat-page">
+    <div class="chat-sidebar">
+        <h3>Agents</h3>
+        <div class="agent-list">
+            <button class="agent-btn @(currentAgent == AgentType.SeniorUnityCSharp ? "active" : "")"
+                    @onclick="() => SelectAgent(AgentType.SeniorUnityCSharp)">
+                <span class="agent-icon">&#128187;</span>
+                <span class="agent-name">Unity Expert</span>
+                <span class="agent-desc">Architecture, performance, patterns</span>
+            </button>
+            <button class="agent-btn @(currentAgent == AgentType.Generalist ? "active" : "")"
+                    @onclick="() => SelectAgent(AgentType.Generalist)">
+                <span class="agent-icon">&#128161;</span>
+                <span class="agent-name">Generalist</span>
+                <span class="agent-desc">Q&A, explanations, help</span>
+            </button>
+            <button class="agent-btn @(currentAgent == AgentType.Researcher ? "active" : "")"
+                    @onclick="() => SelectAgent(AgentType.Researcher)">
+                <span class="agent-icon">&#128269;</span>
+                <span class="agent-name">Researcher</span>
+                <span class="agent-desc">Web search, documentation</span>
+            </button>
+        </div>
+
+        <h3>Session</h3>
+        <div class="session-info">
+            <span>ID: @sessionId.Substring(0, 8)...</span>
+            <button class="btn btn-small" @onclick="NewSession">New Session</button>
+        </div>
+    </div>
+
+    <div class="chat-main">
+        <div class="chat-messages" @ref="messagesContainer">
+            @if (!messages.Any())
+            {
+                <div class="chat-empty">
+                    <h2>Start a conversation</h2>
+                    <p>Ask the @currentAgent agent about your Unity project.</p>
+                    @if (!ProjectService.IsProjectIndexed)
+                    {
+                        <p class="warning">Project not indexed. <a href="/">Index a project first</a> for better results.</p>
+                    }
+                </div>
+            }
+
+            @foreach (var msg in messages)
+            {
+                <div class="message @(msg.Role == "user" ? "user" : "assistant")">
+                    <div class="message-header">
+                        <span class="message-role">@(msg.Role == "user" ? "You" : msg.AgentType ?? "Assistant")</span>
+                        <span class="message-time">@msg.Timestamp.ToLocalTime().ToString("HH:mm")</span>
+                    </div>
+                    <div class="message-content">
+                        @((MarkupString)FormatMessage(msg.Content))
+                    </div>
+                    @if (msg.ToolCalls?.Any() == true)
+                    {
+                        <div class="message-tools">
+                            <span class="tools-label">Tools used:</span>
+                            @foreach (var tool in msg.ToolCalls)
+                            {
+                                <span class="tool-badge">@tool.Name</span>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (isLoading)
+            {
+                <div class="message assistant loading">
+                    <div class="message-header">
+                        <span class="message-role">@currentAgent</span>
+                    </div>
+                    <div class="message-content">
+                        <span class="typing-indicator">
+                            <span></span><span></span><span></span>
+                        </span>
+                        @if (!string.IsNullOrEmpty(streamingContent))
+                        {
+                            @((MarkupString)FormatMessage(streamingContent))
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="chat-input-container">
+            <textarea @bind="inputMessage"
+                      @bind:event="oninput"
+                      @onkeydown="HandleKeyDown"
+                      placeholder="Type your message... (Shift+Enter for newline, Enter to send)"
+                      class="chat-input"
+                      disabled="@isLoading"
+                      rows="3"></textarea>
+            <button class="btn btn-primary send-btn" @onclick="SendMessage" disabled="@(isLoading || string.IsNullOrWhiteSpace(inputMessage))">
+                Send
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<ChatMessage> messages = new();
+    private string inputMessage = "";
+    private string sessionId = Guid.NewGuid().ToString();
+    private AgentType currentAgent = AgentType.SeniorUnityCSharp;
+    private bool isLoading = false;
+    private string streamingContent = "";
+    private ElementReference messagesContainer;
+
+    protected override void OnInitialized()
+    {
+        messages = Orchestrator.GetChatHistory(sessionId);
+    }
+
+    private void SelectAgent(AgentType agent)
+    {
+        currentAgent = agent;
+    }
+
+    private void NewSession()
+    {
+        sessionId = Guid.NewGuid().ToString();
+        messages.Clear();
+        streamingContent = "";
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey)
+        {
+            await SendMessage();
+        }
+    }
+
+    private async Task SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(inputMessage) || isLoading)
+            return;
+
+        var userMessage = inputMessage.Trim();
+        inputMessage = "";
+        isLoading = true;
+        streamingContent = "";
+
+        messages.Add(new ChatMessage
+        {
+            Role = "user",
+            Content = userMessage,
+            AgentType = currentAgent.ToString()
+        });
+
+        StateHasChanged();
+        await ScrollToBottom();
+
+        try
+        {
+            await foreach (var evt in Orchestrator.StreamMessageAsync(userMessage, currentAgent, sessionId))
+            {
+                if (evt.Type == AgentStreamEventType.TextDelta && evt.Content != null)
+                {
+                    streamingContent += evt.Content;
+                    StateHasChanged();
+                }
+                else if (evt.Type == AgentStreamEventType.Complete)
+                {
+                    break;
+                }
+            }
+
+            messages.Add(new ChatMessage
+            {
+                Role = "assistant",
+                Content = streamingContent,
+                AgentType = currentAgent.ToString()
+            });
+        }
+        catch (Exception ex)
+        {
+            LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Error, "Chat", $"Error: {ex.Message}");
+            messages.Add(new ChatMessage
+            {
+                Role = "assistant",
+                Content = $"Error: {ex.Message}",
+                AgentType = currentAgent.ToString()
+            });
+        }
+        finally
+        {
+            isLoading = false;
+            streamingContent = "";
+            StateHasChanged();
+            await ScrollToBottom();
+        }
+    }
+
+    private async Task ScrollToBottom()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("scrollToBottom", messagesContainer);
+        }
+        catch { }
+    }
+
+    private string FormatMessage(string content)
+    {
+        if (string.IsNullOrEmpty(content))
+            return "";
+
+        // Simple markdown-like formatting
+        content = System.Web.HttpUtility.HtmlEncode(content);
+
+        // Code blocks
+        content = System.Text.RegularExpressions.Regex.Replace(
+            content,
+            @"```(\w*)\n([\s\S]*?)```",
+            "<pre><code class=\"language-$1\">$2</code></pre>");
+
+        // Inline code
+        content = System.Text.RegularExpressions.Regex.Replace(
+            content,
+            @"`([^`]+)`",
+            "<code>$1</code>");
+
+        // Bold
+        content = System.Text.RegularExpressions.Regex.Replace(
+            content,
+            @"\*\*([^*]+)\*\*",
+            "<strong>$1</strong>");
+
+        // Headers
+        content = System.Text.RegularExpressions.Regex.Replace(
+            content,
+            @"^### (.+)$",
+            "<h4>$1</h4>",
+            System.Text.RegularExpressions.RegexOptions.Multiline);
+
+        content = System.Text.RegularExpressions.Regex.Replace(
+            content,
+            @"^## (.+)$",
+            "<h3>$1</h3>",
+            System.Text.RegularExpressions.RegexOptions.Multiline);
+
+        // Line breaks
+        content = content.Replace("\n", "<br>");
+
+        return content;
+    }
+}

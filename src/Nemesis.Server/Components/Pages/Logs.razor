@@ -1,0 +1,101 @@
+@page "/logs"
+@inject Nemesis.Server.Services.LogService LogService
+@implements IDisposable
+
+<PageTitle>Logs - Nemesis</PageTitle>
+
+<div class="page-container logs-page">
+    <div class="logs-header">
+        <h1>System Logs</h1>
+        <div class="logs-controls">
+            <select @bind="filterLevel" class="input-select">
+                <option value="">All Levels</option>
+                <option value="Debug">Debug</option>
+                <option value="Info">Info</option>
+                <option value="Warning">Warning</option>
+                <option value="Error">Error</option>
+            </select>
+            <input type="text" @bind="filterSource" @bind:event="oninput" class="input-text" placeholder="Filter by source..." />
+            <button class="btn btn-secondary" @onclick="ClearLogs">Clear</button>
+            <button class="btn btn-secondary" @onclick="RefreshLogs">Refresh</button>
+            <label class="checkbox-label">
+                <input type="checkbox" @bind="autoScroll" /> Auto-scroll
+            </label>
+        </div>
+    </div>
+
+    <div class="logs-container">
+        @foreach (var log in filteredLogs)
+        {
+            <div class="log-entry @log.Level.ToString().ToLower()">
+                <span class="log-time">@log.Timestamp.ToLocalTime().ToString("HH:mm:ss.fff")</span>
+                <span class="log-level">@log.Level</span>
+                <span class="log-source">[@log.Source]</span>
+                <span class="log-message">@log.Message</span>
+                @if (!string.IsNullOrEmpty(log.Details))
+                {
+                    <details class="log-details">
+                        <summary>Details</summary>
+                        <pre>@log.Details</pre>
+                    </details>
+                }
+            </div>
+        }
+
+        @if (!filteredLogs.Any())
+        {
+            <div class="logs-empty">No logs matching filters.</div>
+        }
+    </div>
+</div>
+
+@code {
+    private List<LogEntry> logs = new();
+    private string filterLevel = "";
+    private string filterSource = "";
+    private bool autoScroll = true;
+
+    private IEnumerable<LogEntry> filteredLogs => logs
+        .Where(l => string.IsNullOrEmpty(filterLevel) || l.Level.ToString() == filterLevel)
+        .Where(l => string.IsNullOrEmpty(filterSource) ||
+                    l.Source.Contains(filterSource, StringComparison.OrdinalIgnoreCase))
+        .Reverse()
+        .Take(500);
+
+    protected override void OnInitialized()
+    {
+        logs = LogService.GetRecentLogs(500);
+        LogService.LogAdded += OnLogAdded;
+    }
+
+    private void OnLogAdded(LogEntry entry)
+    {
+        logs.Add(entry);
+
+        // Keep only last 1000 logs in memory
+        while (logs.Count > 1000)
+        {
+            logs.RemoveAt(0);
+        }
+
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void RefreshLogs()
+    {
+        logs = LogService.GetRecentLogs(500);
+        StateHasChanged();
+    }
+
+    private void ClearLogs()
+    {
+        LogService.Clear();
+        logs.Clear();
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        LogService.LogAdded -= OnLogAdded;
+    }
+}

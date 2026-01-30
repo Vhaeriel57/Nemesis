@@ -1,0 +1,224 @@
+@page "/settings"
+@using Nemesis.AgentCore.Models
+@inject NemesisConfiguration Config
+@inject Nemesis.Server.Services.LogService LogService
+
+<PageTitle>Settings - Nemesis</PageTitle>
+
+<div class="page-container">
+    <h1>Settings</h1>
+
+    <section class="section">
+        <h2>LLM Configuration</h2>
+        <div class="settings-form">
+            <div class="form-group">
+                <label>Provider</label>
+                <select @bind="Config.Llm.Provider" class="input-select">
+                    <option value="ollama">Ollama (Local)</option>
+                    <option value="openai-compatible">OpenAI Compatible</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Ollama Base URL</label>
+                <input type="text" @bind="Config.Llm.OllamaBaseUrl" class="input-text" />
+            </div>
+            <div class="form-group">
+                <label>Model Name</label>
+                <input type="text" @bind="Config.Llm.ModelName" class="input-text" />
+                <span class="help-text">Recommended: deepseek-coder-v2:16b, codellama:13b, mistral:7b</span>
+            </div>
+            <div class="form-group">
+                <label>Embedding Model</label>
+                <input type="text" @bind="Config.Llm.EmbeddingModel" class="input-text" />
+                <span class="help-text">Recommended: nomic-embed-text</span>
+            </div>
+            <div class="form-group">
+                <label>Temperature (@Config.Llm.Temperature.ToString("F1"))</label>
+                <input type="range" min="0" max="1" step="0.1" @bind="Config.Llm.Temperature" class="input-range" />
+            </div>
+            <div class="form-group">
+                <label>Max Tokens</label>
+                <input type="number" @bind="Config.Llm.MaxTokens" class="input-text" />
+            </div>
+            <div class="form-group">
+                <label>Context Window</label>
+                <input type="number" @bind="Config.Llm.ContextWindow" class="input-text" />
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>OpenAI Fallback (Optional)</h2>
+        <div class="settings-form">
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" @bind="Config.Llm.UseOpenAiFallback" />
+                    Enable OpenAI-compatible fallback
+                </label>
+            </div>
+            <div class="form-group">
+                <label>OpenAI Base URL</label>
+                <input type="text" @bind="Config.Llm.OpenAiBaseUrl" class="input-text"
+                       placeholder="https://api.openai.com" disabled="@(!Config.Llm.UseOpenAiFallback)" />
+            </div>
+            <div class="form-group">
+                <label>API Key</label>
+                <input type="password" @bind="Config.Llm.OpenAiApiKey" class="input-text"
+                       placeholder="sk-..." disabled="@(!Config.Llm.UseOpenAiFallback)" />
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>Web Search</h2>
+        <div class="settings-form">
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" @bind="Config.WebSearch.Enabled" />
+                    Enable web search
+                </label>
+            </div>
+            <div class="form-group">
+                <label>Max Results</label>
+                <input type="number" @bind="Config.WebSearch.MaxResults" class="input-text" />
+            </div>
+            <div class="form-group">
+                <label>Cache Expiration (hours)</label>
+                <input type="number" @bind="Config.WebSearch.CacheExpirationHours" class="input-text" />
+            </div>
+            <div class="form-group">
+                <label>Allowed Domains</label>
+                <textarea @bind="allowedDomainsText" rows="5" class="input-text"></textarea>
+                <span class="help-text">One domain per line. Only these domains will be searched.</span>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>Project Settings</h2>
+        <div class="settings-form">
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" @bind="Config.Project.AutoBackup" />
+                    Auto-backup before applying patches
+                </label>
+            </div>
+            <div class="form-group">
+                <label>Backup retention (days)</label>
+                <input type="number" @bind="Config.Project.MaxBackupAge" class="input-text" />
+            </div>
+            <div class="form-group">
+                <label>Excluded Folders</label>
+                <textarea @bind="excludedFoldersText" rows="5" class="input-text"></textarea>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>UI Settings</h2>
+        <div class="settings-form">
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" @bind="Config.Ui.AutoApplyPatches" />
+                    Auto-apply patches (without preview)
+                </label>
+                <span class="help-text warning">Warning: This will apply changes without confirmation!</span>
+            </div>
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" @bind="Config.Ui.ShowDetailedLogs" />
+                    Show detailed logs
+                </label>
+            </div>
+            <div class="form-group">
+                <label>Max Chat History</label>
+                <input type="number" @bind="Config.Ui.MaxChatHistory" class="input-text" />
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>Storage Paths</h2>
+        <div class="settings-form read-only">
+            <div class="form-group">
+                <label>Database</label>
+                <input type="text" value="@Config.Storage.DatabasePath" class="input-text" readonly />
+            </div>
+            <div class="form-group">
+                <label>Vector Store</label>
+                <input type="text" value="@Config.Storage.VectorStorePath" class="input-text" readonly />
+            </div>
+            <div class="form-group">
+                <label>Cache</label>
+                <input type="text" value="@Config.Storage.CachePath" class="input-text" readonly />
+            </div>
+            <div class="form-group">
+                <label>Backups</label>
+                <input type="text" value="@Config.Storage.BackupPath" class="input-text" readonly />
+            </div>
+        </div>
+    </section>
+
+    <div class="settings-actions">
+        <button class="btn btn-primary" @onclick="SaveSettings">Save Settings</button>
+        <button class="btn btn-secondary" @onclick="ResetSettings">Reset to Defaults</button>
+    </div>
+</div>
+
+@code {
+    private string allowedDomainsText = "";
+    private string excludedFoldersText = "";
+
+    protected override void OnInitialized()
+    {
+        allowedDomainsText = string.Join("\n", Config.WebSearch.AllowedDomains);
+        excludedFoldersText = string.Join("\n", Config.Project.ExcludedFolders);
+    }
+
+    private void SaveSettings()
+    {
+        Config.WebSearch.AllowedDomains = allowedDomainsText
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(d => d.Trim())
+            .Where(d => !string.IsNullOrEmpty(d))
+            .ToList();
+
+        Config.Project.ExcludedFolders = excludedFoldersText
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(f => f.Trim())
+            .Where(f => !string.IsNullOrEmpty(f))
+            .ToList();
+
+        LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Info, "Settings", "Settings saved (runtime only - restart required for full effect)");
+    }
+
+    private void ResetSettings()
+    {
+        Config.Llm.Provider = "ollama";
+        Config.Llm.OllamaBaseUrl = "http://localhost:11434";
+        Config.Llm.ModelName = "deepseek-coder-v2:16b";
+        Config.Llm.EmbeddingModel = "nomic-embed-text";
+        Config.Llm.Temperature = 0.7;
+        Config.Llm.MaxTokens = 4096;
+        Config.Llm.UseOpenAiFallback = false;
+
+        Config.WebSearch.Enabled = true;
+        Config.WebSearch.MaxResults = 10;
+        Config.WebSearch.AllowedDomains = new List<string>
+        {
+            "docs.unity3d.com",
+            "forum.unity.com",
+            "github.com",
+            "stackoverflow.com",
+            "learn.microsoft.com"
+        };
+
+        Config.Ui.AutoApplyPatches = false;
+        Config.Ui.ShowDetailedLogs = true;
+
+        OnInitialized();
+        StateHasChanged();
+
+        LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Info, "Settings", "Settings reset to defaults");
+    }
+}

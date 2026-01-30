@@ -1,0 +1,211 @@
+@page "/"
+@using Nemesis.CodeAnalysis.Indexing
+@using Nemesis.AgentCore.RAG
+@inject CodeIndexer CodeIndexer
+@inject RagService RagService
+@inject Nemesis.Server.Services.ProjectService ProjectService
+@inject Nemesis.Server.Services.LogService LogService
+@inject ILlmProvider LlmProvider
+
+<PageTitle>Project - Nemesis</PageTitle>
+
+<div class="page-container">
+    <h1>Project Setup</h1>
+
+    <section class="section">
+        <h2>Select Unity Project</h2>
+        <div class="input-group">
+            <input type="text" @bind="projectPath" placeholder="Enter Unity project path (e.g., C:\Projects\MyGame)" class="input-text" />
+            <button class="btn btn-primary" @onclick="BrowseProject">Browse</button>
+        </div>
+        <p class="help-text">Enter the root folder of your Unity project (the one containing Assets/)</p>
+    </section>
+
+    <section class="section">
+        <h2>Index Project</h2>
+        <div class="button-group">
+            <button class="btn btn-primary" @onclick="StartIndexing" disabled="@(isIndexing || string.IsNullOrEmpty(projectPath))">
+                @(isIndexing ? "Indexing..." : "Index Project")
+            </button>
+            <button class="btn btn-secondary" @onclick="ClearIndex" disabled="@(!ProjectService.IsProjectIndexed)">
+                Clear Index
+            </button>
+        </div>
+
+        @if (isIndexing)
+        {
+            <div class="progress-container">
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: @(indexProgress.PercentComplete)%"></div>
+                </div>
+                <div class="progress-text">
+                    <span>@indexProgress.Phase</span>
+                    <span>@indexProgress.Current / @indexProgress.Total</span>
+                </div>
+                <div class="progress-file">@indexProgress.CurrentFile</div>
+            </div>
+        }
+
+        @if (ProjectService.CurrentProject != null)
+        {
+            <div class="project-info">
+                <h3>Project Statistics</h3>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <span class="stat-value">@ProjectService.CurrentProject.TotalFiles</span>
+                        <span class="stat-label">C# Files</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">@ProjectService.CurrentProject.TotalTypes</span>
+                        <span class="stat-label">Types</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">@ProjectService.CurrentProject.TotalMethods</span>
+                        <span class="stat-label">Methods</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">@ProjectService.CurrentProject.TotalLinesOfCode.ToString("N0")</span>
+                        <span class="stat-label">Lines of Code</span>
+                    </div>
+                </div>
+
+                @if (ProjectService.CurrentProject.Errors.Any())
+                {
+                    <div class="errors-section">
+                        <h4>Indexing Warnings (@ProjectService.CurrentProject.Errors.Count)</h4>
+                        <ul class="error-list">
+                            @foreach (var error in ProjectService.CurrentProject.Errors.Take(10))
+                            {
+                                <li>@error</li>
+                            }
+                        </ul>
+                    </div>
+                }
+            </div>
+        }
+    </section>
+
+    <section class="section">
+        <h2>LLM Status</h2>
+        <div class="llm-status">
+            <div class="status-indicator @(llmConnected ? "connected" : "disconnected")"></div>
+            <span>@LlmProvider.Name: @(llmConnected ? "Connected" : "Not Connected")</span>
+            <button class="btn btn-small" @onclick="CheckLlmStatus">Refresh</button>
+        </div>
+        @if (!llmConnected)
+        {
+            <div class="warning-box">
+                <p>LLM is not connected. Make sure Ollama is running:</p>
+                <code>ollama serve</code>
+                <p>And pull the required model:</p>
+                <code>ollama pull deepseek-coder-v2:16b</code>
+            </div>
+        }
+    </section>
+
+    <section class="section">
+        <h2>Quick Actions</h2>
+        <div class="quick-actions">
+            <a href="chat" class="action-card @(ProjectService.IsProjectIndexed ? "" : "disabled")">
+                <span class="action-icon">&#128172;</span>
+                <span class="action-title">Start Chat</span>
+                <span class="action-desc">Talk to AI agents about your project</span>
+            </a>
+            <a href="tasks" class="action-card">
+                <span class="action-icon">&#128203;</span>
+                <span class="action-title">View Tasks</span>
+                <span class="action-desc">Manage queued tasks and plans</span>
+            </a>
+            <a href="patches" class="action-card">
+                <span class="action-icon">&#128221;</span>
+                <span class="action-title">Review Patches</span>
+                <span class="action-desc">Preview and apply code changes</span>
+            </a>
+        </div>
+    </section>
+</div>
+
+@code {
+    private string projectPath = "";
+    private bool isIndexing = false;
+    private bool llmConnected = false;
+    private IndexingProgress indexProgress = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (ProjectService.CurrentProject != null)
+        {
+            projectPath = ProjectService.CurrentProject.Path;
+        }
+
+        await CheckLlmStatus();
+    }
+
+    private async Task BrowseProject()
+    {
+        // In a real implementation, this would use a file picker
+        // For now, just use the text input
+        LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Info, "UI", "Browse clicked - use text input for path");
+    }
+
+    private async Task StartIndexing()
+    {
+        if (string.IsNullOrEmpty(projectPath))
+            return;
+
+        isIndexing = true;
+        indexProgress = new IndexingProgress();
+        StateHasChanged();
+
+        try
+        {
+            var progress = new Progress<IndexingProgress>(p =>
+            {
+                indexProgress = p;
+                InvokeAsync(StateHasChanged);
+            });
+
+            var projectInfo = await CodeIndexer.IndexProjectAsync(projectPath, progress);
+            ProjectService.CurrentProject = projectInfo;
+
+            // Index for RAG
+            var index = CodeIndexer.GetIndex();
+            if (index != null)
+            {
+                await RagService.IndexProjectAsync(index, progress);
+            }
+
+            LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Info, "Indexer",
+                $"Project indexed: {projectInfo.TotalFiles} files, {projectInfo.TotalTypes} types");
+        }
+        catch (Exception ex)
+        {
+            LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Error, "Indexer", $"Indexing failed: {ex.Message}");
+        }
+        finally
+        {
+            isIndexing = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ClearIndex()
+    {
+        await RagService.ClearIndexAsync();
+        ProjectService.CurrentProject = null;
+        LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Info, "Indexer", "Index cleared");
+    }
+
+    private async Task CheckLlmStatus()
+    {
+        try
+        {
+            llmConnected = await LlmProvider.CheckHealthAsync();
+        }
+        catch
+        {
+            llmConnected = false;
+        }
+        StateHasChanged();
+    }
+}

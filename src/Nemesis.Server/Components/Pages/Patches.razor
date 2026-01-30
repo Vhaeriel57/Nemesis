@@ -1,0 +1,196 @@
+@page "/patches"
+@using Nemesis.AgentCore.Tools
+@inject PatchTool PatchTool
+@inject Nemesis.Server.Services.LogService LogService
+
+<PageTitle>Patches - Nemesis</PageTitle>
+
+<div class="page-container">
+    <h1>Code Patches</h1>
+
+    <section class="section">
+        <h2>Pending Patches</h2>
+        @if (!pendingPatches.Any())
+        {
+            <p class="empty-message">No pending patches. Patches are created when AI agents suggest code changes.</p>
+        }
+        else
+        {
+            <div class="patches-list">
+                @foreach (var patch in pendingPatches)
+                {
+                    <div class="patch-card">
+                        <div class="patch-header">
+                            <span class="patch-file">@Path.GetFileName(patch.FilePath)</span>
+                            <span class="patch-status @patch.Status.ToString().ToLower()">@patch.Status</span>
+                        </div>
+                        <div class="patch-path">@patch.FilePath</div>
+                        <div class="patch-time">Created: @patch.CreatedAt.ToLocalTime().ToString("g")</div>
+
+                        <details class="patch-diff">
+                            <summary>View Diff (@patch.Hunks.Count hunks)</summary>
+                            <pre class="diff-content">@patch.UnifiedDiff</pre>
+                        </details>
+
+                        <div class="patch-actions">
+                            <button class="btn btn-primary" @onclick="() => ApplyPatch(patch.Id)">
+                                Apply Patch
+                            </button>
+                            <button class="btn btn-danger" @onclick="() => RejectPatch(patch.Id)">
+                                Reject
+                            </button>
+                            @if (patch.Status == PatchStatus.Applied)
+                            {
+                                <button class="btn btn-warning" @onclick="() => RollbackPatch(patch.Id)">
+                                    Rollback
+                                </button>
+                            }
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(patch.ErrorMessage))
+                        {
+                            <div class="patch-error">@patch.ErrorMessage</div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </section>
+
+    <section class="section">
+        <h2>Create Manual Patch</h2>
+        <div class="manual-patch-form">
+            <div class="form-group">
+                <label>File Path (relative to project)</label>
+                <input type="text" @bind="manualFilePath" class="input-text" placeholder="Assets/Scripts/MyScript.cs" />
+            </div>
+            <div class="form-group">
+                <label>Original Code (to find and replace)</label>
+                <textarea @bind="manualOriginal" rows="5" class="input-text code-input"
+                          placeholder="Paste the original code snippet here..."></textarea>
+            </div>
+            <div class="form-group">
+                <label>New Code (replacement)</label>
+                <textarea @bind="manualNew" rows="5" class="input-text code-input"
+                          placeholder="Paste the new code here..."></textarea>
+            </div>
+            <button class="btn btn-primary" @onclick="CreateManualPatch"
+                    disabled="@(string.IsNullOrWhiteSpace(manualFilePath) || string.IsNullOrWhiteSpace(manualOriginal) || string.IsNullOrWhiteSpace(manualNew))">
+                Create Patch
+            </button>
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>Applied Patches History</h2>
+        @if (!appliedPatches.Any())
+        {
+            <p class="empty-message">No applied patches yet.</p>
+        }
+        else
+        {
+            @foreach (var patch in appliedPatches.TakeLast(10).Reverse())
+            {
+                <div class="patch-card applied">
+                    <div class="patch-header">
+                        <span class="patch-file">@Path.GetFileName(patch.FilePath)</span>
+                        <span class="patch-status applied">Applied</span>
+                    </div>
+                    <div class="patch-path">@patch.FilePath</div>
+                    @if (!string.IsNullOrEmpty(patch.BackupPath))
+                    {
+                        <div class="patch-backup">Backup: @patch.BackupPath</div>
+                    }
+                </div>
+            }
+        }
+    </section>
+</div>
+
+@code {
+    private List<FilePatch> pendingPatches = new();
+    private List<FilePatch> appliedPatches = new();
+
+    private string manualFilePath = "";
+    private string manualOriginal = "";
+    private string manualNew = "";
+
+    protected override void OnInitialized()
+    {
+        RefreshPatches();
+    }
+
+    private void RefreshPatches()
+    {
+        var all = PatchTool.GetAllPendingPatches().ToList();
+        pendingPatches = all.Where(p => p.Status == PatchStatus.Pending).ToList();
+        appliedPatches = all.Where(p => p.Status == PatchStatus.Applied).ToList();
+    }
+
+    private async Task ApplyPatch(string patchId)
+    {
+        var patch = PatchTool.GetPendingPatch(patchId);
+        if (patch == null)
+            return;
+
+        var success = await PatchTool.ApplyPatchAsync(patch, true);
+
+        if (success)
+        {
+            LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Info, "Patch", $"Patch applied: {patch.FilePath}");
+        }
+        else
+        {
+            LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Error, "Patch", $"Patch failed: {patch.ErrorMessage}");
+        }
+
+        RefreshPatches();
+        StateHasChanged();
+    }
+
+    private void RejectPatch(string patchId)
+    {
+        PatchTool.RemovePendingPatch(patchId);
+        LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Info, "Patch", $"Patch rejected: {patchId}");
+        RefreshPatches();
+        StateHasChanged();
+    }
+
+    private async Task RollbackPatch(string patchId)
+    {
+        var patch = PatchTool.GetPendingPatch(patchId);
+        if (patch == null)
+            return;
+
+        var success = await PatchTool.RollbackPatchAsync(patch);
+
+        if (success)
+        {
+            LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Info, "Patch", $"Patch rolled back: {patch.FilePath}");
+        }
+
+        RefreshPatches();
+        StateHasChanged();
+    }
+
+    private void CreateManualPatch()
+    {
+        if (string.IsNullOrWhiteSpace(manualFilePath) ||
+            string.IsNullOrWhiteSpace(manualOriginal) ||
+            string.IsNullOrWhiteSpace(manualNew))
+            return;
+
+        // This is a simplified version - in reality we'd need the full file content
+        var patch = PatchTool.CreatePatch(manualFilePath, manualOriginal, manualNew);
+        PatchTool.AddPendingPatch(patch);
+
+        LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Info, "Patch", $"Manual patch created: {patch.Id}");
+
+        manualFilePath = "";
+        manualOriginal = "";
+        manualNew = "";
+
+        RefreshPatches();
+        StateHasChanged();
+    }
+}
