@@ -419,7 +419,7 @@ public class PatchTool : ITool, IPatchService
         var backupFileName = $"{fileName}.{timestamp}.bak";
         var backupPath = Path.Combine(_backupPath, backupFileName);
 
-        await File.CopyAsync(filePath, backupPath, cancellationToken);
+        File.Copy(filePath, backupPath, overwrite: true);
         return backupPath;
     }
 
@@ -431,7 +431,7 @@ public class PatchTool : ITool, IPatchService
         if (!File.Exists(backupPath))
             return false;
 
-        await File.CopyAsync(backupPath, originalPath, true, cancellationToken);
+        File.Copy(backupPath, originalPath, overwrite: true);
         return true;
     }
 
