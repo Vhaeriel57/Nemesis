@@ -113,3 +113,29 @@ window.notify = function(message, type) {
 };
 
 console.log('Nemesis client scripts loaded');
+
+// Folder picker using File System Access API (modern browsers)
+window.pickFolder = async function() {
+    try {
+        // Check if the File System Access API is available
+        if ('showDirectoryPicker' in window) {
+            const directoryHandle = await window.showDirectoryPicker({
+                mode: 'read'
+            });
+            return directoryHandle.name;
+        } else {
+            // Fallback: prompt user to enter path manually
+            const path = prompt('Enter the Unity project folder path:', 'C:\\Projects\\MyUnityProject');
+            return path || '';
+        }
+    } catch (err) {
+        if (err.name === 'AbortError') {
+            // User cancelled the picker
+            return '';
+        }
+        console.error('Folder picker error:', err);
+        // Fallback to prompt
+        const path = prompt('Enter the Unity project folder path:', 'C:\\Projects\\MyUnityProject');
+        return path || '';
+    }
+};
