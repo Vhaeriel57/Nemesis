@@ -5,6 +5,7 @@ using Nemesis.AgentCore.LLM;
 using Nemesis.AgentCore.Models;
 using Nemesis.AgentCore.Orchestration;
 using Nemesis.AgentCore.RAG;
+using Nemesis.AgentCore.Services;
 using Nemesis.AgentCore.Tools;
 using Nemesis.CodeAnalysis.Indexing;
 using Nemesis.Shared.DTOs;
@@ -59,16 +60,44 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<CodeIndexTool>()
         });
 
-        // Agents
+        // Specialized Agents (team members)
         services.AddSingleton<SeniorUnityCSharpAgent>();
         services.AddSingleton<GeneralistAgent>();
         services.AddSingleton<ResearcherAgent>();
 
+        // Manager Agent (orchestrates the team)
+        services.AddSingleton<ManagerAgent>(sp =>
+        {
+            var llm = sp.GetRequiredService<ILlmProvider>();
+            var tools = sp.GetRequiredService<IEnumerable<ITool>>();
+            var logger = sp.GetRequiredService<ILogger<ManagerAgent>>();
+
+            // Team agents for the manager
+            var teamAgents = new IAgent[]
+            {
+                sp.GetRequiredService<SeniorUnityCSharpAgent>(),
+                sp.GetRequiredService<GeneralistAgent>(),
+                sp.GetRequiredService<ResearcherAgent>()
+            };
+
+            return new ManagerAgent(llm, tools, teamAgents, logger);
+        });
+
+        // All agents collection (including manager)
         services.AddSingleton<IEnumerable<IAgent>>(sp => new IAgent[]
         {
+            sp.GetRequiredService<ManagerAgent>(),
             sp.GetRequiredService<SeniorUnityCSharpAgent>(),
             sp.GetRequiredService<GeneralistAgent>(),
             sp.GetRequiredService<ResearcherAgent>()
+        });
+
+        // Conversation persistence service
+        services.AddSingleton<ConversationService>(sp =>
+        {
+            var conversationsPath = Path.Combine(config.Storage.CachePath, "conversations");
+            var logger = sp.GetRequiredService<ILogger<ConversationService>>();
+            return new ConversationService(conversationsPath, logger);
         });
 
         // Orchestrator
@@ -92,6 +121,7 @@ public static class ServiceCollectionExtensions
         Directory.CreateDirectory(Path.GetDirectoryName(config.Storage.VectorStorePath) ?? "./data");
         Directory.CreateDirectory(config.Storage.CachePath);
         Directory.CreateDirectory(config.Storage.BackupPath);
+        Directory.CreateDirectory(Path.Combine(config.Storage.CachePath, "conversations"));
 
         // Initialize vector store
         var vectorStore = services.GetRequiredService<IVectorStore>();
@@ -109,5 +139,7 @@ public static class ServiceCollectionExtensions
         {
             logger.LogWarning("LLM provider {Name} is not available. Make sure Ollama is running.", llmProvider.Name);
         }
+
+        logger.LogInformation("Nemesis initialized with Manager agent and team coordination enabled");
     }
 }

@@ -1,6 +1,8 @@
 @page "/chat"
 @using Nemesis.AgentCore.Orchestration
+@using Nemesis.AgentCore.Services
 @inject AgentOrchestrator Orchestrator
+@inject ConversationService ConversationService
 @inject Nemesis.Server.Services.ProjectService ProjectService
 @inject Nemesis.Server.Services.LogService LogService
 @inject IJSRuntime JS
@@ -11,64 +13,116 @@
     <div class="chat-sidebar">
         <h3>Agents</h3>
         <div class="agent-list">
+            <button class="agent-btn manager @(currentAgent == AgentType.Manager ? "active" : "")"
+                    @onclick="() => SelectAgent(AgentType.Manager)">
+                <span class="agent-icon">&#128101;</span>
+                <span class="agent-name">Manager</span>
+                <span class="agent-desc">Coordonne l'équipe</span>
+            </button>
             <button class="agent-btn @(currentAgent == AgentType.SeniorUnityCSharp ? "active" : "")"
                     @onclick="() => SelectAgent(AgentType.SeniorUnityCSharp)">
                 <span class="agent-icon">&#128187;</span>
                 <span class="agent-name">Unity Expert</span>
-                <span class="agent-desc">Architecture, performance, patterns</span>
+                <span class="agent-desc">Architecture, performance</span>
             </button>
             <button class="agent-btn @(currentAgent == AgentType.Generalist ? "active" : "")"
                     @onclick="() => SelectAgent(AgentType.Generalist)">
                 <span class="agent-icon">&#128161;</span>
                 <span class="agent-name">Generalist</span>
-                <span class="agent-desc">Q&A, explanations, help</span>
+                <span class="agent-desc">Q&A, explications</span>
             </button>
             <button class="agent-btn @(currentAgent == AgentType.Researcher ? "active" : "")"
                     @onclick="() => SelectAgent(AgentType.Researcher)">
                 <span class="agent-icon">&#128269;</span>
                 <span class="agent-name">Researcher</span>
-                <span class="agent-desc">Web search, documentation</span>
+                <span class="agent-desc">Recherche web</span>
             </button>
         </div>
 
-        <h3>Session</h3>
-        <div class="session-info">
-            <span>ID: @sessionId.Substring(0, 8)...</span>
-            <button class="btn btn-small" @onclick="NewSession">New Session</button>
+        <h3>Sessions</h3>
+        <div class="session-list">
+            @foreach (var session in sessions.Take(5))
+            {
+                <div class="session-item @(session.Id == conversationId ? "active" : "")"
+                     @onclick="() => LoadSession(session.Id)">
+                    <span class="session-name">@(session.Name.Length > 20 ? session.Name.Substring(0, 20) + "..." : session.Name)</span>
+                    <span class="session-meta">@session.MessageCount msgs</span>
+                </div>
+            }
+        </div>
+        <div class="session-actions">
+            <button class="btn btn-small" @onclick="NewSession">Nouvelle</button>
         </div>
     </div>
 
     <div class="chat-main">
+        <div class="chat-header">
+            <span class="current-agent-display">
+                @GetAgentIcon(currentAgent) @GetAgentDisplayName(currentAgent)
+            </span>
+            @if (currentAgent == AgentType.Manager)
+            {
+                <span class="team-mode-badge">Mode équipe activé</span>
+            }
+        </div>
+
         <div class="chat-messages" @ref="messagesContainer">
-            @if (!messages.Any())
+            @if (!displayMessages.Any())
             {
                 <div class="chat-empty">
-                    <h2>Start a conversation</h2>
-                    <p>Ask the @currentAgent agent about your Unity project.</p>
+                    <h2>Bienvenue</h2>
+                    @if (currentAgent == AgentType.Manager)
+                    {
+                        <p>Le <strong>Manager</strong> coordonne l'équipe d'agents.</p>
+                        <p>Il délègue aux spécialistes et synthétise leurs réponses.</p>
+                    }
+                    else
+                    {
+                        <p>Discutez avec <strong>@GetAgentDisplayName(currentAgent)</strong>.</p>
+                    }
                     @if (!ProjectService.IsProjectIndexed)
                     {
-                        <p class="warning">Project not indexed. <a href="/">Index a project first</a> for better results.</p>
+                        <p class="warning">Projet non indexé. <a href="/">Indexez d'abord</a>.</p>
                     }
                 </div>
             }
 
-            @foreach (var msg in messages)
+            @foreach (var msg in displayMessages)
             {
-                <div class="message @(msg.Role == "user" ? "user" : "assistant")">
+                <div class="message @GetMessageCssClass(msg)">
                     <div class="message-header">
-                        <span class="message-role">@(msg.Role == "user" ? "You" : msg.AgentType ?? "Assistant")</span>
+                        <span class="message-sender">
+                            @if (msg.IsUser)
+                            {
+                                <span>Vous</span>
+                            }
+                            else
+                            {
+                                <span>@GetAgentIcon(msg.AgentType) @GetAgentDisplayName(msg.AgentType)</span>
+                            }
+                        </span>
                         <span class="message-time">@msg.Timestamp.ToLocalTime().ToString("HH:mm")</span>
+                        @if (msg.IsDelegation && msg.TargetAgent.HasValue)
+                        {
+                            <span class="delegation-arrow">→ @GetAgentDisplayName(msg.TargetAgent)</span>
+                        }
                     </div>
-                    <div class="message-content">
-                        @((MarkupString)FormatMessage(msg.Content))
+                    <div class="message-body @(msg.IsThinking ? "thinking-text" : "")">
+                        @if (msg.IsThinking)
+                        {
+                            <em>@msg.Content</em>
+                        }
+                        else
+                        {
+                            @((MarkupString)FormatMessage(msg.Content))
+                        }
                     </div>
-                    @if (msg.ToolCalls?.Any() == true)
+                    @if (msg.ToolNames.Any())
                     {
                         <div class="message-tools">
-                            <span class="tools-label">Tools used:</span>
-                            @foreach (var tool in msg.ToolCalls)
+                            @foreach (var tool in msg.ToolNames)
                             {
-                                <span class="tool-badge">@tool.Name</span>
+                                <span class="tool-tag">@tool</span>
                             }
                         </div>
                     }
@@ -77,62 +131,114 @@
 
             @if (isLoading)
             {
-                <div class="message assistant loading">
+                <div class="message assistant loading-message">
                     <div class="message-header">
-                        <span class="message-role">@currentAgent</span>
+                        <span class="message-sender">@GetAgentIcon(activeAgent) @GetAgentDisplayName(activeAgent)</span>
                     </div>
-                    <div class="message-content">
-                        <span class="typing-indicator">
-                            <span></span><span></span><span></span>
-                        </span>
+                    <div class="message-body">
+                        <span class="typing-dots"><span></span><span></span><span></span></span>
+                        @if (!string.IsNullOrEmpty(currentStatus))
+                        {
+                            <span class="loading-status">@currentStatus</span>
+                        }
                         @if (!string.IsNullOrEmpty(streamingContent))
                         {
-                            @((MarkupString)FormatMessage(streamingContent))
+                            <div class="streaming-text">@((MarkupString)FormatMessage(streamingContent))</div>
                         }
                     </div>
                 </div>
             }
         </div>
 
-        <div class="chat-input-container">
+        <div class="chat-input-area">
             <textarea @bind="inputMessage"
                       @bind:event="oninput"
                       @onkeydown="HandleKeyDown"
-                      placeholder="Type your message... (Shift+Enter for newline, Enter to send)"
-                      class="chat-input"
+                      placeholder="Message... (Entrée = envoyer)"
+                      class="chat-textarea"
                       disabled="@isLoading"
-                      rows="3"></textarea>
-            <button class="btn btn-primary send-btn" @onclick="SendMessage" disabled="@(isLoading || string.IsNullOrWhiteSpace(inputMessage))">
-                Send
+                      rows="2"></textarea>
+            <button class="send-button" @onclick="SendMessage" disabled="@(isLoading || string.IsNullOrWhiteSpace(inputMessage))">
+                ➤
             </button>
         </div>
     </div>
 </div>
 
 @code {
-    private List<ChatMessage> messages = new();
+    private List<DisplayMessage> displayMessages = new();
+    private List<ConversationSession> sessions = new();
     private string inputMessage = "";
-    private string sessionId = Guid.NewGuid().ToString();
-    private AgentType currentAgent = AgentType.SeniorUnityCSharp;
+    private string conversationId = "";
+    private AgentType currentAgent = AgentType.Manager;
+    private AgentType? activeAgent;
     private bool isLoading = false;
     private string streamingContent = "";
+    private string currentStatus = "";
     private ElementReference messagesContainer;
 
-    protected override void OnInitialized()
+    // Display model for UI
+    private class DisplayMessage
     {
-        messages = Orchestrator.GetChatHistory(sessionId);
+        public string Content { get; set; } = "";
+        public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+        public bool IsUser { get; set; }
+        public AgentType? AgentType { get; set; }
+        public bool IsDelegation { get; set; }
+        public AgentType? TargetAgent { get; set; }
+        public bool IsThinking { get; set; }
+        public bool IsSummary { get; set; }
+        public List<string> ToolNames { get; set; } = new();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        conversationId = Guid.NewGuid().ToString();
+        await RefreshSessions();
+    }
+
+    private async Task RefreshSessions()
+    {
+        sessions = ConversationService.GetAllSessions();
+        StateHasChanged();
     }
 
     private void SelectAgent(AgentType agent)
     {
         currentAgent = agent;
+        activeAgent = agent;
+    }
+
+    private async Task LoadSession(string sessionId)
+    {
+        conversationId = sessionId;
+        var conversation = ConversationService.GetConversation(sessionId);
+        if (conversation != null)
+        {
+            displayMessages = conversation.Messages.Select(m => new DisplayMessage
+            {
+                Content = m.Content,
+                Timestamp = m.Timestamp,
+                IsUser = m.Sender.Type == SenderType.User,
+                AgentType = m.Sender.AgentType,
+                IsDelegation = m.Type == MessageType.Delegation,
+                TargetAgent = m.TargetAgent,
+                IsThinking = m.Type == MessageType.AgentThinking,
+                IsSummary = m.Type == MessageType.Summary,
+                ToolNames = m.ToolCalls?.Select(t => t.Name).ToList() ?? new()
+            }).ToList();
+        }
+        StateHasChanged();
+        await ScrollToBottom();
     }
 
     private void NewSession()
     {
-        sessionId = Guid.NewGuid().ToString();
-        messages.Clear();
+        conversationId = Guid.NewGuid().ToString();
+        displayMessages.Clear();
         streamingContent = "";
+        currentStatus = "";
+        _ = RefreshSessions();
     }
 
     private async Task HandleKeyDown(KeyboardEventArgs e)
@@ -152,12 +258,15 @@
         inputMessage = "";
         isLoading = true;
         streamingContent = "";
+        currentStatus = currentAgent == AgentType.Manager ? "Analyse..." : "Réflexion...";
+        activeAgent = currentAgent;
 
-        messages.Add(new ChatMessage
+        // Add user message to display
+        displayMessages.Add(new DisplayMessage
         {
-            Role = "user",
             Content = userMessage,
-            AgentType = currentAgent.ToString()
+            IsUser = true,
+            Timestamp = DateTime.UtcNow
         });
 
         StateHasChanged();
@@ -165,40 +274,91 @@
 
         try
         {
-            await foreach (var evt in Orchestrator.StreamMessageAsync(userMessage, currentAgent, sessionId))
+            await foreach (var evt in Orchestrator.StreamMessageAsync(userMessage, currentAgent, conversationId))
             {
-                if (evt.Type == AgentStreamEventType.TextDelta && evt.Content != null)
+                switch (evt.Type)
                 {
-                    streamingContent += evt.Content;
-                    StateHasChanged();
-                }
-                else if (evt.Type == AgentStreamEventType.Complete)
-                {
-                    break;
+                    case AgentStreamEventType.AgentThinking:
+                        currentStatus = evt.Content ?? "Réflexion...";
+                        activeAgent = evt.AgentType ?? currentAgent;
+                        StateHasChanged();
+                        break;
+
+                    case AgentStreamEventType.Delegation:
+                        currentStatus = $"→ {GetAgentDisplayName(evt.TargetAgent)}";
+                        activeAgent = evt.TargetAgent ?? currentAgent;
+
+                        displayMessages.Add(new DisplayMessage
+                        {
+                            Content = evt.Content ?? "Délégation...",
+                            AgentType = AgentType.Manager,
+                            IsDelegation = true,
+                            TargetAgent = evt.TargetAgent,
+                            Timestamp = DateTime.UtcNow
+                        });
+                        StateHasChanged();
+                        await ScrollToBottom();
+                        break;
+
+                    case AgentStreamEventType.TextDelta:
+                        if (evt.Content != null)
+                        {
+                            streamingContent += evt.Content;
+                            StateHasChanged();
+                        }
+                        break;
+
+                    case AgentStreamEventType.AgentResponse:
+                        if (!string.IsNullOrEmpty(evt.Content))
+                        {
+                            displayMessages.Add(new DisplayMessage
+                            {
+                                Content = evt.Content,
+                                AgentType = evt.AgentType,
+                                Timestamp = DateTime.UtcNow
+                            });
+                            StateHasChanged();
+                            await ScrollToBottom();
+                        }
+                        break;
+
+                    case AgentStreamEventType.Synthesis:
+                        currentStatus = "Synthèse...";
+                        activeAgent = AgentType.Manager;
+                        StateHasChanged();
+                        break;
+
+                    case AgentStreamEventType.Complete:
+                        break;
                 }
             }
 
-            messages.Add(new ChatMessage
+            // Add final response
+            if (!string.IsNullOrEmpty(streamingContent))
             {
-                Role = "assistant",
-                Content = streamingContent,
-                AgentType = currentAgent.ToString()
-            });
+                displayMessages.Add(new DisplayMessage
+                {
+                    Content = streamingContent,
+                    AgentType = currentAgent,
+                    IsSummary = currentAgent == AgentType.Manager,
+                    Timestamp = DateTime.UtcNow
+                });
+            }
         }
         catch (Exception ex)
         {
-            LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Error, "Chat", $"Error: {ex.Message}");
-            messages.Add(new ChatMessage
+            LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Error, "Chat", $"Erreur: {ex.Message}");
+            displayMessages.Add(new DisplayMessage
             {
-                Role = "assistant",
-                Content = $"Error: {ex.Message}",
-                AgentType = currentAgent.ToString()
+                Content = $"Erreur: {ex.Message}",
+                Timestamp = DateTime.UtcNow
             });
         }
         finally
         {
             isLoading = false;
             streamingContent = "";
+            currentStatus = "";
             StateHasChanged();
             await ScrollToBottom();
         }
@@ -206,55 +366,44 @@
 
     private async Task ScrollToBottom()
     {
-        try
-        {
-            await JS.InvokeVoidAsync("scrollToBottom", messagesContainer);
-        }
-        catch { }
+        try { await JS.InvokeVoidAsync("scrollToBottom", messagesContainer); } catch { }
+    }
+
+    private string GetAgentIcon(AgentType? t) => t switch
+    {
+        AgentType.Manager => "👥",
+        AgentType.SeniorUnityCSharp => "💻",
+        AgentType.Generalist => "💡",
+        AgentType.Researcher => "🔍",
+        _ => "🤖"
+    };
+
+    private string GetAgentDisplayName(AgentType? t) => t switch
+    {
+        AgentType.Manager => "Manager",
+        AgentType.SeniorUnityCSharp => "Unity Expert",
+        AgentType.Generalist => "Generalist",
+        AgentType.Researcher => "Researcher",
+        _ => "Agent"
+    };
+
+    private string GetMessageCssClass(DisplayMessage msg)
+    {
+        var c = msg.IsUser ? "user" : "assistant";
+        if (msg.IsDelegation) c += " delegation";
+        if (msg.IsThinking) c += " thinking";
+        if (msg.IsSummary) c += " summary";
+        return c;
     }
 
     private string FormatMessage(string content)
     {
-        if (string.IsNullOrEmpty(content))
-            return "";
-
-        // Simple markdown-like formatting
+        if (string.IsNullOrEmpty(content)) return "";
         content = System.Web.HttpUtility.HtmlEncode(content);
-
-        // Code blocks
-        content = System.Text.RegularExpressions.Regex.Replace(
-            content,
-            @"```(\w*)\n([\s\S]*?)```",
-            "<pre><code class=\"language-$1\">$2</code></pre>");
-
-        // Inline code
-        content = System.Text.RegularExpressions.Regex.Replace(
-            content,
-            @"`([^`]+)`",
-            "<code>$1</code>");
-
-        // Bold
-        content = System.Text.RegularExpressions.Regex.Replace(
-            content,
-            @"\*\*([^*]+)\*\*",
-            "<strong>$1</strong>");
-
-        // Headers
-        content = System.Text.RegularExpressions.Regex.Replace(
-            content,
-            @"^### (.+)$",
-            "<h4>$1</h4>",
-            System.Text.RegularExpressions.RegexOptions.Multiline);
-
-        content = System.Text.RegularExpressions.Regex.Replace(
-            content,
-            @"^## (.+)$",
-            "<h3>$1</h3>",
-            System.Text.RegularExpressions.RegexOptions.Multiline);
-
-        // Line breaks
+        content = System.Text.RegularExpressions.Regex.Replace(content, @"```(\w*)\n([\s\S]*?)```", "<pre><code>$2</code></pre>");
+        content = System.Text.RegularExpressions.Regex.Replace(content, @"`([^`]+)`", "<code>$1</code>");
+        content = System.Text.RegularExpressions.Regex.Replace(content, @"\*\*([^*]+)\*\*", "<strong>$1</strong>");
         content = content.Replace("\n", "<br>");
-
         return content;
     }
 }

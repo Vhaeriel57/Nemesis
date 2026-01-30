@@ -1120,3 +1120,194 @@ details summary:hover {
         align-items: center;
     }
 }
+
+/* Manager Agent Styles */
+.agent-btn.manager {
+    border-left: 3px solid var(--accent-primary);
+    background: linear-gradient(135deg, var(--bg-card) 0%, rgba(99, 102, 241, 0.1) 100%);
+}
+
+.agent-btn.manager.active {
+    background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+}
+
+.team-mode-badge {
+    background: var(--accent-primary);
+    color: white;
+    padding: 0.25rem 0.75rem;
+    border-radius: 1rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.chat-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.current-agent-display {
+    font-weight: 600;
+    font-size: 1.1rem;
+}
+
+/* Session List */
+.session-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-bottom: 0.5rem;
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+.session-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.5rem;
+    background: var(--bg-secondary);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+}
+
+.session-item:hover {
+    background: var(--bg-primary);
+}
+
+.session-item.active {
+    background: var(--accent-primary);
+    color: white;
+}
+
+.session-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.session-meta {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+}
+
+.session-actions {
+    margin-top: 0.5rem;
+}
+
+/* Delegation Messages */
+.message.delegation {
+    background: linear-gradient(135deg, var(--bg-card) 0%, rgba(99, 102, 241, 0.1) 100%);
+    border-left: 3px solid var(--accent-primary);
+}
+
+.delegation-arrow {
+    color: var(--accent-primary);
+    font-weight: 600;
+    margin-left: 0.5rem;
+}
+
+/* Summary Messages */
+.message.summary {
+    background: linear-gradient(135deg, var(--bg-card) 0%, rgba(16, 185, 129, 0.1) 100%);
+    border-left: 3px solid var(--accent-success);
+}
+
+/* Thinking Text */
+.thinking-text {
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* Loading Status */
+.loading-status {
+    margin-left: 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.streaming-text {
+    margin-top: 0.5rem;
+}
+
+/* Chat Input Area */
+.chat-input-area {
+    display: flex;
+    gap: 0.5rem;
+    padding: 1rem;
+    background: var(--bg-card);
+    border-top: 1px solid var(--border-color);
+}
+
+.chat-textarea {
+    flex: 1;
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    resize: none;
+    font-family: inherit;
+}
+
+.chat-textarea:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+}
+
+.send-button {
+    padding: 0.75rem 1.25rem;
+    background: var(--accent-primary);
+    color: white;
+    border: none;
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    font-size: 1.25rem;
+    transition: background 0.2s;
+}
+
+.send-button:hover:not(:disabled) {
+    background: var(--accent-secondary);
+}
+
+.send-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Typing Dots Animation */
+.typing-dots {
+    display: inline-flex;
+    gap: 4px;
+}
+
+.typing-dots span {
+    width: 8px;
+    height: 8px;
+    background: var(--accent-primary);
+    border-radius: 50%;
+    animation: typing-bounce 1.4s infinite ease-in-out;
+}
+
+.typing-dots span:nth-child(1) { animation-delay: 0s; }
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typing-bounce {
+    0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
+    40% { transform: scale(1); opacity: 1; }
+}
+
+/* Tool Tags */
+.tool-tag {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    background: var(--bg-secondary);
+    border-radius: 1rem;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin-right: 0.25rem;
+}

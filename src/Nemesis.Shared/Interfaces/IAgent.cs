@@ -28,6 +28,7 @@ public class AgentContext
     public Dictionary<string, string> RelevantFiles { get; set; } = new();
     public List<CodeSymbolInfo> RelevantSymbols { get; set; } = new();
     public string? CurrentTaskId { get; set; }
+    public string? ConversationId { get; set; }
     public Dictionary<string, object> Metadata { get; set; } = new();
 }
 
@@ -40,6 +41,7 @@ public class AgentResponse
     public List<string> Citations { get; set; } = new();
     public bool RequiresConfirmation { get; set; }
     public string? ConfirmationPrompt { get; set; }
+    public Dictionary<string, object>? Metadata { get; set; }
 }
 
 public class AgentStreamEvent
@@ -48,6 +50,8 @@ public class AgentStreamEvent
     public string? Content { get; set; }
     public ToolCall? ToolCall { get; set; }
     public string? Error { get; set; }
+    public AgentType? AgentType { get; set; }  // Which agent is speaking
+    public AgentType? TargetAgent { get; set; } // For delegation events
 }
 
 public enum AgentStreamEventType
@@ -57,7 +61,12 @@ public enum AgentStreamEventType
     ToolCallProgress,
     ToolCallComplete,
     Complete,
-    Error
+    Error,
+    // New events for multi-agent system
+    AgentThinking,     // Agent is processing
+    Delegation,        // Manager delegating to another agent
+    AgentResponse,     // Sub-agent responding
+    Synthesis          // Manager synthesizing responses
 }
 
 public class CodeSymbolInfo
