@@ -146,7 +146,7 @@
     {
         try
         {
-            var selectedPath = await JSRuntime.InvokeAsync<string>("pickFolder");
+            var selectedPath = await JSRuntime.InvokeAsync<string>("pickFolder", projectPath);
             if (!string.IsNullOrEmpty(selectedPath))
             {
                 projectPath = selectedPath;
