@@ -3,6 +3,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Nemesis.CodeAnalysis.Models;
 using Nemesis.Shared.DTOs;
+using TypeInfo = Nemesis.CodeAnalysis.Models.TypeInfo;
 
 namespace Nemesis.CodeAnalysis.Analysis;
 
