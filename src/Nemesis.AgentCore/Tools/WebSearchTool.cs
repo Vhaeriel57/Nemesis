@@ -84,13 +84,13 @@ public class WebSearchTool : ITool, IWebSearchService
 
         return action.ToLower() switch
         {
-            "search" => await SearchAsync(query, maxResults, cancellationToken),
+            "search" => await ExecuteSearchAsync(query, maxResults, cancellationToken),
             "fetch" => await FetchAsync(query, cancellationToken),
             _ => new ToolResult { Success = false, Error = $"Unknown action: {action}" }
         };
     }
 
-    private async Task<ToolResult> SearchAsync(string query, int maxResults, CancellationToken cancellationToken)
+    private async Task<ToolResult> ExecuteSearchAsync(string query, int maxResults, CancellationToken cancellationToken)
     {
         try
         {
