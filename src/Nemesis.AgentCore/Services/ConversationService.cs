@@ -186,7 +186,7 @@ public class ConversationService
         return sessions.OrderByDescending(s => s.LastAccessedAt).ToList();
     }
 
-    public async Task DeleteConversation(string conversationId)
+    public Task DeleteConversation(string conversationId)
     {
         lock (_lock)
         {
@@ -200,6 +200,7 @@ public class ConversationService
         }
 
         _logger.LogInformation("Deleted conversation: {Id}", conversationId);
+        return Task.CompletedTask;
     }
 
     public async Task SaveAllAsync()

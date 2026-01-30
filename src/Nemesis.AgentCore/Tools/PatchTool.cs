@@ -410,7 +410,7 @@ public class PatchTool : ITool, IPatchService
         return success;
     }
 
-    public async Task<string> CreateBackupAsync(
+    public Task<string> CreateBackupAsync(
         string filePath,
         CancellationToken cancellationToken = default)
     {
@@ -420,19 +420,19 @@ public class PatchTool : ITool, IPatchService
         var backupPath = Path.Combine(_backupPath, backupFileName);
 
         File.Copy(filePath, backupPath, overwrite: true);
-        return backupPath;
+        return Task.FromResult(backupPath);
     }
 
-    public async Task<bool> RestoreBackupAsync(
+    public Task<bool> RestoreBackupAsync(
         string backupPath,
         string originalPath,
         CancellationToken cancellationToken = default)
     {
         if (!File.Exists(backupPath))
-            return false;
+            return Task.FromResult(false);
 
         File.Copy(backupPath, originalPath, overwrite: true);
-        return true;
+        return Task.FromResult(true);
     }
 
     public Task CleanupOldBackupsAsync(
