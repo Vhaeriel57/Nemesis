@@ -326,10 +326,10 @@ Utilise les outils pour rechercher dans le projet avant de répondre.";
     private string BuildEnrichedPrompt(string userMessage, AgentContext context, Dictionary<string, string> searchResults)
     {
         var sb = new StringBuilder();
-        const int maxTotalLength = 3000; // Limite stricte pour éviter truncation
+        const int maxTotalLength = 24000; // 32768 tokens - marge pour system prompt et réponse
         var currentLength = 0;
 
-        // INSTRUCTION CRITIQUE EN PREMIER - toujours visible même si tronqué
+        // INSTRUCTION CRITIQUE EN PREMIER
         sb.AppendLine("⚠️ RÉPONDS EN FRANÇAIS. Réponds DIRECTEMENT à la question posée.");
         sb.AppendLine();
 
@@ -339,23 +339,37 @@ Utilise les outils pour rechercher dans le projet avant de répondre.";
         sb.AppendLine();
         currentLength = sb.Length;
 
-        // Liste des classes pertinentes (COMPACT - pas le contenu complet)
+        // Contexte du projet
         if (_projectKnowledge != null && _projectKnowledge.IsLoaded)
         {
+            // Carte du projet (résumé)
+            var projectMap = _projectKnowledge.GetProjectMap();
+            if (!string.IsNullOrEmpty(projectMap) && currentLength + projectMap.Length < maxTotalLength - 10000)
+            {
+                sb.AppendLine("## 🗺️ CARTE DU PROJET:");
+                sb.AppendLine(TruncateText(projectMap, 4000));
+                sb.AppendLine();
+                currentLength = sb.Length;
+            }
+
+            // Recherche des classes pertinentes
             var keywords = ExtractKeywords(userMessage);
             var projectSearchResults = new List<SearchResult>();
-            foreach (var keyword in keywords.Take(3))
+            foreach (var keyword in keywords.Take(5))
             {
                 projectSearchResults.AddRange(_projectKnowledge.Search(keyword));
             }
 
             if (projectSearchResults.Any())
             {
-                sb.AppendLine("## Classes/Fichiers trouvés:");
-                foreach (var result in projectSearchResults.DistinctBy(r => r.FilePath).Take(8))
+                sb.AppendLine("## 🔍 Classes/Fichiers pertinents trouvés:");
+                foreach (var result in projectSearchResults.DistinctBy(r => r.FilePath).Take(15))
                 {
-                    var line = $"- {result.Name} ({result.Type}): {result.FilePath}";
-                    if (currentLength + line.Length < maxTotalLength - 500)
+                    var line = $"- **{result.Name}** ({result.Type}): `{result.FilePath}`";
+                    if (!string.IsNullOrEmpty(result.Description))
+                        line += $" - {result.Description}";
+
+                    if (currentLength + line.Length < maxTotalLength - 8000)
                     {
                         sb.AppendLine(line);
                         currentLength += line.Length;
@@ -363,18 +377,49 @@ Utilise les outils pour rechercher dans le projet avant de répondre.";
                 }
                 sb.AppendLine();
 
-                // UN SEUL fichier le plus pertinent
-                var mostRelevant = projectSearchResults.FirstOrDefault();
-                if (mostRelevant != null && currentLength < maxTotalLength - 800)
+                // Contenu des fichiers les plus pertinents (jusqu'à 5)
+                sb.AppendLine("## 📄 CODE DES FICHIERS PERTINENTS:");
+                var filesToShow = projectSearchResults
+                    .DistinctBy(r => r.FilePath)
+                    .Take(5)
+                    .ToList();
+
+                foreach (var result in filesToShow)
                 {
-                    var content = _projectKnowledge.GetFileContent(mostRelevant.FilePath);
+                    var content = _projectKnowledge.GetFileContent(result.FilePath);
                     if (!string.IsNullOrEmpty(content))
                     {
-                        sb.AppendLine($"## Code de {mostRelevant.Name}:");
-                        sb.AppendLine("```csharp");
-                        sb.AppendLine(TruncateText(content, 800));
-                        sb.AppendLine("```");
+                        var maxFileSize = (maxTotalLength - currentLength - 2000) / Math.Max(1, filesToShow.Count - filesToShow.IndexOf(result));
+                        maxFileSize = Math.Min(maxFileSize, 3000);
+
+                        if (currentLength < maxTotalLength - 2000)
+                        {
+                            sb.AppendLine($"### `{result.Name}` ({result.FilePath})");
+                            sb.AppendLine("```csharp");
+                            sb.AppendLine(TruncateText(content, (int)maxFileSize));
+                            sb.AppendLine("```");
+                            sb.AppendLine();
+                            currentLength = sb.Length;
+                        }
                     }
+                }
+            }
+        }
+
+        // Résultats de recherche automatique (outils)
+        if (searchResults.Any() && currentLength < maxTotalLength - 2000)
+        {
+            foreach (var kvp in searchResults.Where(k => k.Key.StartsWith("file_")).Take(3))
+            {
+                var fileName = kvp.Key.Substring(5);
+                if (currentLength + kvp.Value.Length < maxTotalLength - 1000)
+                {
+                    sb.AppendLine($"### Fichier supplémentaire: `{fileName}`");
+                    sb.AppendLine("```csharp");
+                    sb.AppendLine(TruncateText(kvp.Value, 2000));
+                    sb.AppendLine("```");
+                    sb.AppendLine();
+                    currentLength = sb.Length;
                 }
             }
         }
@@ -383,11 +428,19 @@ Utilise les outils pour rechercher dans le projet avant de répondre.";
         sb.AppendLine();
         if (IsModificationRequest(userMessage))
         {
-            sb.AppendLine("INSTRUCTION: Crée le code complet et fournis un patch diff.");
+            sb.AppendLine("## INSTRUCTION:");
+            sb.AppendLine("1. Analyse le code existant ci-dessus");
+            sb.AppendLine("2. Crée le code MODIFIÉ complet");
+            sb.AppendLine("3. Fournis un PATCH au format diff unifié");
         }
         else if (IsPlanningRequest(userMessage))
         {
-            sb.AppendLine("INSTRUCTION: Explique ton plan étape par étape AVANT de coder.");
+            sb.AppendLine("## INSTRUCTION:");
+            sb.AppendLine("Explique ton plan détaillé étape par étape:");
+            sb.AppendLine("1. Ce que tu as compris de la demande");
+            sb.AppendLine("2. Les fichiers/classes existants que tu vas utiliser");
+            sb.AppendLine("3. Les modifications ou créations nécessaires");
+            sb.AppendLine("4. Comment tout s'interconnecte");
         }
 
         return sb.ToString();
@@ -667,7 +720,7 @@ Utilise les outils pour rechercher dans le projet avant de répondre.";
         var toolDefs = Tools.Values.Select(t => t.Definition).ToList();
 
         var llmResponse = await LlmProvider.CompleteWithToolsAsync(
-            messages, toolDefs, SystemPrompt, 0.3, 4096, cancellationToken);
+            messages, toolDefs, SystemPrompt, 0.3, 8192, cancellationToken);
 
         // Phase 6: Traitement des outils
         var toolCall = ParseToolCall(llmResponse);
@@ -711,7 +764,7 @@ Utilise les outils pour rechercher dans le projet avant de répondre.";
             });
 
             llmResponse = await LlmProvider.CompleteWithToolsAsync(
-                messages, toolDefs, SystemPrompt, 0.3, 4096, cancellationToken);
+                messages, toolDefs, SystemPrompt, 0.3, 8192, cancellationToken);
 
             toolCall = ParseToolCall(llmResponse);
         }
