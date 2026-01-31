@@ -146,19 +146,39 @@ public class AgentOrchestrator
             ChatHistory = history.TakeLast(20).ToList()
         };
 
+        // Detect if this is a general project question
+        var isGeneralProjectQuestion = IsGeneralProjectQuestion(message);
+
         // Add relevant code context from RAG if indexed
         if (_ragService.IsIndexed)
         {
             try
             {
-                var relevantContexts = await _ragService.RetrieveAsync(message, topK: 5, cancellationToken: cancellationToken);
+                // For general questions, use broader search terms
+                var searchQueries = isGeneralProjectQuestion
+                    ? new[] { "MonoBehaviour", "NetworkBehaviour", "GameManager", "Player", message }
+                    : new[] { message };
 
-                foreach (var ctx in relevantContexts)
+                var allResults = new List<RetrievedContext>();
+
+                foreach (var query in searchQueries)
                 {
-                    if (!context.RelevantFiles.ContainsKey(ctx.FilePath))
-                    {
-                        context.RelevantFiles[ctx.FilePath] = ctx.Content;
-                    }
+                    var relevantContexts = await _ragService.RetrieveAsync(
+                        query,
+                        topK: isGeneralProjectQuestion ? 3 : 5,
+                        cancellationToken: cancellationToken);
+                    allResults.AddRange(relevantContexts);
+                }
+
+                // Deduplicate by file path
+                var seenFiles = new HashSet<string>();
+                foreach (var ctx in allResults)
+                {
+                    if (seenFiles.Contains(ctx.FilePath))
+                        continue;
+
+                    seenFiles.Add(ctx.FilePath);
+                    context.RelevantFiles[ctx.FilePath] = ctx.Content;
 
                     if (!string.IsNullOrEmpty(ctx.SymbolName))
                     {
@@ -170,6 +190,10 @@ public class AgentOrchestrator
                             Kind = ctx.Metadata.TryGetValue("kind", out var kind) ? kind : "Unknown"
                         });
                     }
+
+                    // Limit to 10 files max
+                    if (seenFiles.Count >= 10)
+                        break;
                 }
             }
             catch (Exception ex)
@@ -178,7 +202,47 @@ public class AgentOrchestrator
             }
         }
 
+        // For general project questions, also search for key types
+        if (isGeneralProjectQuestion && _codeIndexer.IsIndexed)
+        {
+            try
+            {
+                // Search for common Unity patterns
+                var keySearches = new[] { "Manager", "Controller", "Player", "Network", "Game" };
+                foreach (var searchTerm in keySearches)
+                {
+                    var symbols = await _codeIndexer.SearchSymbolsAsync(searchTerm, 3, cancellationToken);
+                    foreach (var symbol in symbols)
+                    {
+                        if (!context.RelevantSymbols.Any(s => s.FullName == symbol.FullName))
+                        {
+                            context.RelevantSymbols.Add(symbol);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to search for key types");
+            }
+        }
+
         return context;
+    }
+
+    private bool IsGeneralProjectQuestion(string message)
+    {
+        var lowerMessage = message.ToLowerInvariant();
+        var generalPatterns = new[]
+        {
+            "mon projet", "my project", "le projet", "the project",
+            "dis-moi", "tell me", "que peux", "what can",
+            "décris", "describe", "présente", "présentation",
+            "overview", "résumé", "summary", "analyse",
+            "c'est quoi", "what is this", "à propos", "about"
+        };
+
+        return generalPatterns.Any(p => lowerMessage.Contains(p));
     }
 
     public async Task<TaskPlan> CreatePlanAsync(

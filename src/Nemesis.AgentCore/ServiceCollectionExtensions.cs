@@ -60,36 +60,13 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<CodeIndexTool>()
         });
 
-        // Specialized Agents (team members)
-        services.AddSingleton<SeniorUnityCSharpAgent>();
-        services.AddSingleton<GeneralistAgent>();
-        services.AddSingleton<ResearcherAgent>();
+        // Nemesis - Agent unifié all-in-one
+        services.AddSingleton<NemesisAgent>();
 
-        // Manager Agent (orchestrates the team)
-        services.AddSingleton<ManagerAgent>(sp =>
-        {
-            var llm = sp.GetRequiredService<ILlmProvider>();
-            var tools = sp.GetRequiredService<IEnumerable<ITool>>();
-            var logger = sp.GetRequiredService<ILogger<ManagerAgent>>();
-
-            // Team agents for the manager
-            var teamAgents = new IAgent[]
-            {
-                sp.GetRequiredService<SeniorUnityCSharpAgent>(),
-                sp.GetRequiredService<GeneralistAgent>(),
-                sp.GetRequiredService<ResearcherAgent>()
-            };
-
-            return new ManagerAgent(llm, tools, teamAgents, logger);
-        });
-
-        // All agents collection (including manager)
+        // Collection d'agents (contient uniquement Nemesis)
         services.AddSingleton<IEnumerable<IAgent>>(sp => new IAgent[]
         {
-            sp.GetRequiredService<ManagerAgent>(),
-            sp.GetRequiredService<SeniorUnityCSharpAgent>(),
-            sp.GetRequiredService<GeneralistAgent>(),
-            sp.GetRequiredService<ResearcherAgent>()
+            sp.GetRequiredService<NemesisAgent>()
         });
 
         // Conversation persistence service
@@ -143,6 +120,6 @@ public static class ServiceCollectionExtensions
             logger.LogWarning("LLM provider {Name} is not available. Make sure Ollama is running.", llmProvider.Name);
         }
 
-        logger.LogInformation("Nemesis initialized with Manager agent and team coordination enabled");
+        logger.LogInformation("Nemesis initialized - Agent unifié prêt");
     }
 }
