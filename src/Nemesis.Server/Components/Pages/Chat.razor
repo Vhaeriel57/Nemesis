@@ -28,13 +28,13 @@
                 {
                     <div class="no-sessions">Aucune conversation</div>
                 }
-                @foreach (var session in sessions.OrderByDescending(s => s.LastMessageAt).Take(20))
+                @foreach (var session in sessions.OrderByDescending(s => s.LastAccessedAt).Take(20))
                 {
                     <div class="session-item @(session.Id == conversationId ? "active" : "")"
                          @onclick="() => LoadSession(session.Id)">
                         <div class="session-info">
                             <span class="session-name">@TruncateText(session.Name, 25)</span>
-                            <span class="session-date">@FormatDate(session.LastMessageAt)</span>
+                            <span class="session-date">@FormatDate(session.LastAccessedAt)</span>
                         </div>
                         <span class="session-count">@session.MessageCount</span>
                     </div>
@@ -208,10 +208,11 @@
         await RefreshSessions();
     }
 
-    private async Task RefreshSessions()
+    private Task RefreshSessions()
     {
         sessions = ConversationService.GetAllSessions();
         StateHasChanged();
+        return Task.CompletedTask;
     }
 
     private async Task LoadSession(string sessionId)
@@ -282,8 +283,8 @@
                         StateHasChanged();
                         break;
 
-                    case AgentStreamEventType.ToolUse:
-                        currentStatus = $"Utilisation: {evt.Content}";
+                    case AgentStreamEventType.ToolCallComplete:
+                        currentStatus = $"Outil: {evt.Content}";
                         StateHasChanged();
                         break;
 
@@ -293,11 +294,6 @@
                             streamingContent += evt.Content;
                             StateHasChanged();
                         }
-                        break;
-
-                    case AgentStreamEventType.PatchGenerated:
-                        currentStatus = "Patch généré!";
-                        StateHasChanged();
                         break;
 
                     case AgentStreamEventType.Complete:
