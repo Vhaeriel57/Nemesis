@@ -21,7 +21,7 @@ public class NemesisAgent : BaseAgent
 
     // Cache de recherche pour la session
     private readonly Dictionary<string, string> _fileCache = new();
-    private readonly Dictionary<string, List<CodeSymbol>> _searchCache = new();
+    private readonly Dictionary<string, List<CodeSymbolInfo>> _searchCache = new();
     private readonly List<string> _readFiles = new();
 
     public override string Name => "Nemesis";
@@ -542,7 +542,7 @@ public class NewFile : MonoBehaviour
                 if (!string.IsNullOrEmpty(query))
                 {
                     // Parse symbols from result if possible
-                    _searchCache[query] = new List<CodeSymbol>();
+                    _searchCache[query] = new List<CodeSymbolInfo>();
                 }
             }
             else if (toolCall.Name == "file_system")
