@@ -26,21 +26,32 @@ window.downloadFile = function(filename, content, contentType) {
     URL.revokeObjectURL(url);
 };
 
-// Syntax highlighting for code blocks (simple version)
-window.highlightCode = function() {
-    document.querySelectorAll('pre code').forEach(function(block) {
-        // Add line numbers
-        const lines = block.innerHTML.split('\n');
-        block.innerHTML = lines.map(function(line, i) {
-            return '<span class="line-number">' + (i + 1) + '</span>' + line;
-        }).join('\n');
-    });
+// Initialize textarea auto-resize
+window.initTextareaAutoResize = function(element) {
+    if (!element) return;
+
+    function resize() {
+        element.style.height = 'auto';
+        element.style.height = Math.min(Math.max(element.scrollHeight, 44), 200) + 'px';
+    }
+
+    element.addEventListener('input', resize);
+    element.addEventListener('focus', resize);
+    resize();
 };
 
-// Auto-resize textarea
+// Auto-resize textarea (legacy support)
 window.autoResizeTextarea = function(element) {
+    if (!element) return;
     element.style.height = 'auto';
     element.style.height = Math.min(element.scrollHeight, 200) + 'px';
+};
+
+// Syntax highlighting using Prism.js
+window.highlightAllCode = function() {
+    if (typeof Prism !== 'undefined') {
+        Prism.highlightAll();
+    }
 };
 
 // Focus trap for modals
@@ -112,8 +123,6 @@ window.notify = function(message, type) {
     }, 3000);
 };
 
-console.log('Nemesis client scripts loaded');
-
 // Copy code from code blocks
 window.copyCode = function(button) {
     var codeBlock = button.closest('.code-block');
@@ -123,7 +132,7 @@ window.copyCode = function(button) {
             var text = code.textContent;
             navigator.clipboard.writeText(text).then(function() {
                 var originalText = button.textContent;
-                button.textContent = 'Copié!';
+                button.textContent = 'Copie!';
                 button.style.background = '#00d26a';
                 setTimeout(function() {
                     button.textContent = originalText;
@@ -146,3 +155,34 @@ window.pickFolder = function(currentPath) {
     var path = prompt('Enter the Unity project folder path:', defaultPath);
     return path || '';
 };
+
+// MutationObserver to highlight new code blocks
+var codeObserver = new MutationObserver(function(mutations) {
+    mutations.forEach(function(mutation) {
+        if (mutation.addedNodes.length) {
+            mutation.addedNodes.forEach(function(node) {
+                if (node.nodeType === 1) { // Element node
+                    var codeBlocks = node.querySelectorAll ? node.querySelectorAll('code[class*="language-"]') : [];
+                    if (codeBlocks.length > 0 && typeof Prism !== 'undefined') {
+                        codeBlocks.forEach(function(block) {
+                            Prism.highlightElement(block);
+                        });
+                    }
+                }
+            });
+        }
+    });
+});
+
+// Start observing when DOM is ready
+document.addEventListener('DOMContentLoaded', function() {
+    var chatMessages = document.querySelector('.chat-messages');
+    if (chatMessages) {
+        codeObserver.observe(chatMessages, { childList: true, subtree: true });
+    }
+
+    // Also observe the whole body for dynamic content
+    codeObserver.observe(document.body, { childList: true, subtree: true });
+});
+
+console.log('Nemesis client scripts loaded');

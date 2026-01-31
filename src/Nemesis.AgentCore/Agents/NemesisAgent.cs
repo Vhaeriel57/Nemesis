@@ -13,6 +13,8 @@ namespace Nemesis.AgentCore.Agents;
 /// </summary>
 public class NemesisAgent : BaseAgent
 {
+    private readonly IPatchService? _patchService;
+
     public override string Name => "Nemesis";
     public override AgentType Type => AgentType.Manager;
 
@@ -43,6 +45,7 @@ Avant de répondre, tu analyses:
 Tu utilises ACTIVEMENT tes outils pour:
 - **Lire les fichiers** du projet avec `file_system` (action: read_file)
 - **Chercher des symboles** avec `code_index` (action: search)
+- **Rechercher sur le web** avec `web_search` pour trouver de la documentation ou des solutions
 - **Comprendre les relations** entre les scripts
 - **Vérifier** ce qui existe déjà avant de proposer du nouveau code
 
@@ -83,7 +86,8 @@ public class Example : MonoBehaviour
 2. **JAMAIS** inventer du code sans connaître le contexte existant
 3. **TOUJOURS** proposer du code complet et fonctionnel
 4. **TOUJOURS** répondre en français de manière conversationnelle
-5. **TOUJOURS** citer les fichiers que tu as consultés";
+5. **TOUJOURS** citer les fichiers que tu as consultés
+6. **UTILISER** la recherche web quand tu as besoin d'informations récentes ou de documentation";
 
     public override List<string> Capabilities => new()
     {
@@ -100,9 +104,11 @@ public class Example : MonoBehaviour
     public NemesisAgent(
         ILlmProvider llmProvider,
         IEnumerable<ITool> tools,
-        ILogger<NemesisAgent> logger)
+        ILogger<NemesisAgent> logger,
+        IPatchService? patchService = null)
         : base(llmProvider, tools, logger)
     {
+        _patchService = patchService;
     }
 
     public override async Task<AgentResponse> ProcessAsync(
@@ -147,7 +153,7 @@ public class Example : MonoBehaviour
         // Process tool calls using base class method
         var toolCall = ParseToolCall(llmResponse);
         var iterations = 0;
-        var maxIterations = 5;
+        var maxIterations = 8;
 
         while (toolCall != null && iterations < maxIterations)
         {
@@ -195,6 +201,16 @@ public class Example : MonoBehaviour
                 Description = "Patches générés par Nemesis",
                 Patches = patches
             };
+
+            // Add patches to PatchService if available
+            if (_patchService != null)
+            {
+                foreach (var patch in patches)
+                {
+                    _patchService.AddPendingPatch(patch);
+                    Logger.LogInformation("Patch added to pending: {FilePath}", patch.FilePath);
+                }
+            }
         }
 
         return response;
@@ -395,27 +411,147 @@ public class Example : MonoBehaviour
         yield return new AgentStreamEvent
         {
             Type = AgentStreamEventType.AgentThinking,
-            Content = "Analyse en cours...",
+            Content = "🔍 Analyse de ta demande...",
             AgentType = AgentType.Manager
         };
 
-        var response = await ProcessAsync(userMessage, context, cancellationToken);
+        // Build comprehensive project context
+        var projectContext = BuildEnhancedProjectContext(context);
 
-        if (response.ToolCalls.Any())
+        yield return new AgentStreamEvent
         {
+            Type = AgentStreamEventType.AgentThinking,
+            Content = "📚 Construction du contexte projet...",
+            AgentType = AgentType.Manager
+        };
+
+        // Create the main prompt with project context
+        var mainPrompt = $@"## Message de l'utilisateur
+{userMessage}
+
+## Contexte du Projet
+{projectContext}
+
+## Instructions
+1. Analyse la demande et le contexte du projet
+2. Si tu as besoin de plus d'informations sur des fichiers spécifiques, utilise les outils
+3. Réponds de manière complète et conversationnelle en français
+4. Si du code est demandé, fournis du code COMPLET et fonctionnel
+5. Cite toujours les fichiers que tu as consultés";
+
+        // Build messages list
+        var messages = BuildMessagesList(context.ChatHistory, mainPrompt);
+
+        // Get tool definitions from base class Tools dictionary
+        var toolDefs = Tools.Values.Select(t => t.Definition).ToList();
+
+        yield return new AgentStreamEvent
+        {
+            Type = AgentStreamEventType.AgentThinking,
+            Content = "🤔 Réflexion en cours...",
+            AgentType = AgentType.Manager
+        };
+
+        // Call LLM with tools available
+        var llmResponse = await LlmProvider.CompleteWithToolsAsync(
+            messages,
+            toolDefs,
+            SystemPrompt,
+            0.3,
+            8192,
+            cancellationToken);
+
+        // Process tool calls
+        var toolCall = ParseToolCall(llmResponse);
+        var toolCalls = new List<ToolCall>();
+        var iterations = 0;
+        var maxIterations = 8;
+
+        while (toolCall != null && iterations < maxIterations)
+        {
+            iterations++;
+
+            // Emit detailed status for each tool
+            var toolStatus = GetDetailedToolStatus(toolCall);
+            yield return new AgentStreamEvent
+            {
+                Type = AgentStreamEventType.AgentThinking,
+                Content = toolStatus,
+                AgentType = AgentType.Manager
+            };
+
+            Logger.LogInformation("Nemesis executing tool: {Tool}", toolCall.Name);
+
+            var result = await ExecuteToolAsync(toolCall, context, cancellationToken);
+            toolCall.Result = result.Success ? result.Output : result.Error;
+            toolCall.IsComplete = true;
+            toolCalls.Add(toolCall);
+
+            // Emit tool completion
             yield return new AgentStreamEvent
             {
                 Type = AgentStreamEventType.ToolCallComplete,
-                Content = string.Join(", ", response.ToolCalls.Select(t => t.Name)),
+                Content = toolCall.Name,
+                AgentType = AgentType.Manager
+            };
+
+            // Add tool result to messages and continue
+            messages.Add(new ChatMessage
+            {
+                Role = "assistant",
+                Content = llmResponse
+            });
+            messages.Add(new ChatMessage
+            {
+                Role = "tool",
+                Content = $"Résultat de l'outil {toolCall.Name}:\n```\n{toolCall.Result}\n```\n\nContinue ta réponse."
+            });
+
+            yield return new AgentStreamEvent
+            {
+                Type = AgentStreamEventType.AgentThinking,
+                Content = "🤔 Analyse des résultats...",
+                AgentType = AgentType.Manager
+            };
+
+            // Get next response
+            llmResponse = await LlmProvider.CompleteWithToolsAsync(
+                messages,
+                toolDefs,
+                SystemPrompt,
+                0.3,
+                8192,
+                cancellationToken);
+
+            toolCall = ParseToolCall(llmResponse);
+        }
+
+        // Clean up final response
+        var finalContent = CleanToolCallsFromResponse(llmResponse);
+
+        // Extract patches
+        var patches = ExtractPatchesFromResponse(finalContent, context.ProjectPath);
+        if (patches.Any() && _patchService != null)
+        {
+            foreach (var patch in patches)
+            {
+                _patchService.AddPendingPatch(patch);
+                Logger.LogInformation("Patch added to pending: {FilePath}", patch.FilePath);
+            }
+
+            yield return new AgentStreamEvent
+            {
+                Type = AgentStreamEventType.AgentThinking,
+                Content = $"📝 {patches.Count} patch(es) créé(s) - voir l'onglet Patches",
                 AgentType = AgentType.Manager
             };
         }
 
         // Stream the response in chunks
         var chunkSize = 50;
-        for (int i = 0; i < response.Content.Length; i += chunkSize)
+        for (int i = 0; i < finalContent.Length; i += chunkSize)
         {
-            var chunk = response.Content.Substring(i, Math.Min(chunkSize, response.Content.Length - i));
+            var chunk = finalContent.Substring(i, Math.Min(chunkSize, finalContent.Length - i));
             yield return new AgentStreamEvent
             {
                 Type = AgentStreamEventType.TextDelta,
@@ -425,5 +561,71 @@ public class Example : MonoBehaviour
         }
 
         yield return new AgentStreamEvent { Type = AgentStreamEventType.Complete };
+    }
+
+    private string GetDetailedToolStatus(ToolCall toolCall)
+    {
+        var toolName = toolCall.Name?.ToLower() ?? "";
+        var args = toolCall.Arguments ?? new Dictionary<string, object>();
+
+        return toolName switch
+        {
+            "file_system" => GetFileSystemStatus(args),
+            "code_index" => GetCodeIndexStatus(args),
+            "web_search" => GetWebSearchStatus(args),
+            "patch" => GetPatchStatus(args),
+            _ => $"🔧 Utilisation de {toolCall.Name}..."
+        };
+    }
+
+    private string GetFileSystemStatus(Dictionary<string, object> args)
+    {
+        var action = args.GetValueOrDefault("action")?.ToString() ?? "";
+        var path = args.GetValueOrDefault("path")?.ToString() ?? args.GetValueOrDefault("file_path")?.ToString() ?? "";
+        var fileName = !string.IsNullOrEmpty(path) ? Path.GetFileName(path) : "";
+
+        return action switch
+        {
+            "read_file" => $"📂 Lecture de {fileName}...",
+            "list_directory" => $"📁 Liste du dossier {fileName}...",
+            "search_files" => "🔎 Recherche de fichiers...",
+            _ => $"📂 Opération fichier: {action}..."
+        };
+    }
+
+    private string GetCodeIndexStatus(Dictionary<string, object> args)
+    {
+        var action = args.GetValueOrDefault("action")?.ToString() ?? "";
+        var query = args.GetValueOrDefault("query")?.ToString() ?? "";
+
+        return action switch
+        {
+            "search" => $"🔎 Recherche de '{query}' dans le code...",
+            "find_references" => $"🔗 Recherche des références de {query}...",
+            "find_definition" => $"📍 Recherche de la définition de {query}...",
+            _ => $"🔎 Recherche dans l'index: {action}..."
+        };
+    }
+
+    private string GetWebSearchStatus(Dictionary<string, object> args)
+    {
+        var query = args.GetValueOrDefault("query")?.ToString() ?? "";
+        var truncatedQuery = query.Length > 30 ? query.Substring(0, 30) + "..." : query;
+        return $"🌐 Recherche web: \"{truncatedQuery}\"...";
+    }
+
+    private string GetPatchStatus(Dictionary<string, object> args)
+    {
+        var action = args.GetValueOrDefault("action")?.ToString() ?? "";
+        var filePath = args.GetValueOrDefault("file_path")?.ToString() ?? "";
+        var fileName = !string.IsNullOrEmpty(filePath) ? Path.GetFileName(filePath) : "";
+
+        return action switch
+        {
+            "create" => $"📝 Création d'un patch pour {fileName}...",
+            "preview" => "👁️ Prévisualisation du patch...",
+            "apply" => $"✅ Application du patch sur {fileName}...",
+            _ => $"📝 Opération patch: {action}..."
+        };
     }
 }
