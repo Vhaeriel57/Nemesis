@@ -228,7 +228,7 @@
     {
         currentConversation = ConversationService.CreateConversation(
             "Nouvelle conversation",
-            ProjectService.CurrentProjectPath);
+            ProjectService.CurrentProject?.Path);
         conversationId = currentConversation.Id;
     }
 
@@ -317,7 +317,7 @@
         ConversationService.AddMessage(conversationId, new AgentMessage
         {
             Content = userMessage,
-            Sender = new MessageSender { Type = SenderType.User, Name = "User" },
+            Sender = new MessageSender { Type = SenderType.User },
             Timestamp = DateTime.UtcNow
         });
 
@@ -374,7 +374,7 @@
                 ConversationService.AddMessage(conversationId, new AgentMessage
                 {
                     Content = streamingContent,
-                    Sender = new MessageSender { Type = SenderType.Agent, Name = "Nemesis" },
+                    Sender = new MessageSender { Type = SenderType.Agent, AgentType = AgentType.Manager },
                     Timestamp = DateTime.UtcNow,
                     ToolCalls = currentToolCalls.Select(t => new ToolCall { Name = t }).ToList()
                 });
