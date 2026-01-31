@@ -96,16 +96,13 @@ public class AgentHub : Hub
 
             // Index for RAG
             var index = _codeIndexer.GetIndex();
-            if (index != null)
+            if (index is ProjectIndex projectIndex)
             {
-                await _ragService.IndexProjectAsync(index, progress);
+                await _ragService.IndexProjectAsync(projectIndex, progress);
 
                 // Save to cache
-                if (index is ProjectIndex projectIndex)
-                {
-                    await _projectCacheService.SaveProjectIndexAsync(projectIndex, projectInfo);
-                    _logService.AddLog(NemesisLogLevel.Info, "Cache", $"Project cache saved: {projectPath}");
-                }
+                await _projectCacheService.SaveProjectIndexAsync(projectIndex, projectInfo);
+                _logService.AddLog(NemesisLogLevel.Info, "Cache", $"Project cache saved: {projectPath}");
             }
 
             _logService.AddLog(NemesisLogLevel.Info, "Indexer", $"Indexing complete: {projectInfo.TotalFiles} files, {projectInfo.TotalTypes} types");

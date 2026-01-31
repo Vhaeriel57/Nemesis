@@ -331,16 +331,13 @@
 
         // Index for RAG
         var index = CodeIndexer.GetIndex();
-        if (index != null)
+        if (index is ProjectIndex projectIndex)
         {
-            await RagService.IndexProjectAsync(index, progress);
+            await RagService.IndexProjectAsync(projectIndex, progress);
 
             // Save to cache
-            if (index is ProjectIndex projectIndex)
-            {
-                await ProjectCacheService.SaveProjectIndexAsync(projectIndex, projectInfo);
-                LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Info, "Cache", "Project cached for future use");
-            }
+            await ProjectCacheService.SaveProjectIndexAsync(projectIndex, projectInfo);
+            LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Info, "Cache", "Project cached for future use");
         }
 
         LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Info, "Indexer",
