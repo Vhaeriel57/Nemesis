@@ -7,6 +7,11 @@ public interface IPatchService
     FilePatch CreatePatch(string filePath, string originalContent, string modifiedContent);
     PatchSet CreatePatchSet(string description, List<(string filePath, string original, string modified)> changes);
 
+    void AddPendingPatch(FilePatch patch);
+    void RemovePendingPatch(string id);
+    FilePatch? GetPendingPatch(string id);
+    IEnumerable<FilePatch> GetAllPendingPatches();
+
     Task<bool> ApplyPatchAsync(
         FilePatch patch,
         bool createBackup = true,
