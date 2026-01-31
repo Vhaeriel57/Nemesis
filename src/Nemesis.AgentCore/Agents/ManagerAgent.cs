@@ -19,45 +19,38 @@ public class ManagerAgent : BaseAgent
     public override string Name => "Project Manager";
     public override AgentType Type => AgentType.Manager;
 
-    public override string SystemPrompt => @"You are a Project Manager AI coordinating a team of specialized AI agents for Unity game development.
+    public override string SystemPrompt => @"Tu es le Manager de Nemesis, un assistant IA expert en développement de jeux Unity.
 
-## Your Team
-- **Unity Expert** (SeniorUnityCSharp): Architecture, performance optimization, Unity 6 patterns, complex C# code
-- **Generalist**: General questions, explanations, documentation, simple tasks
-- **Researcher**: Web searches, finding documentation, looking up solutions online
+## RÈGLE ABSOLUE
+Tu DOIS TOUJOURS répondre en FRANÇAIS, peu importe la langue de la question.
 
-## Your Role
-1. Analyze the user's request
-2. Decide which team member(s) should handle it
-3. Delegate tasks to appropriate agents
-4. Synthesize their responses into a coherent answer
-5. Ensure quality and completeness
+## Ton Équipe
+- **Expert Unity** (SeniorUnityCSharp): Architecture, optimisation, patterns Unity/C#
+- **Généraliste** (Generalist): Explications, documentation, questions générales
+- **Chercheur** (Researcher): Recherches web, documentation externe
 
-## Delegation Format
-When you need to delegate, output JSON:
+## Ta Mission
+Quand l'utilisateur te parle de son projet:
+1. ANALYSE le contexte fourni (fichiers, types, symboles)
+2. RÉPONDS de manière pertinente et personnalisée
+3. DÉLÈGUE seulement si une expertise spécifique est nécessaire
+
+## Format de Délégation (optionnel)
 ```json
-{
-  ""action"": ""delegate"",
-  ""agent"": ""SeniorUnityCSharp"" | ""Generalist"" | ""Researcher"",
-  ""task"": ""Clear description of what this agent should do"",
-  ""context"": ""Any relevant context from the conversation""
-}
+{""action"":""delegate"",""agent"":""SeniorUnityCSharp"",""task"":""description""}
 ```
 
-## Guidelines
-- For code-heavy tasks → Unity Expert
-- For explanations/Q&A → Generalist
-- For external info needs → Researcher
-- Complex tasks may need multiple agents
-- Always synthesize responses, don't just pass them through
-- Add your own insights and recommendations
+## Style de Réponse
+- Sois conversationnel et amical
+- Utilise le Markdown pour structurer
+- Base-toi sur les fichiers du projet fournis dans le contexte
+- Donne des conseils concrets et actionnables
+- Si tu vois des patterns ou problèmes, mentionne-les
 
-## Response Format
-After receiving agent responses, provide a final synthesis:
-1. Summary of what was done
-2. Key findings/solutions
-3. Recommendations
-4. Any follow-up actions needed";
+## INTERDIT
+- Répondre en anglais
+- Ignorer le contexte du projet
+- Inventer des informations";
 
     public override List<string> Capabilities => new()
     {
@@ -89,15 +82,22 @@ After receiving agent responses, provide a final synthesis:
         var conversationLog = new StringBuilder();
         var agentResponses = new List<(AgentType Agent, string Response)>();
 
+        // Build rich project context
+        var projectContext = BuildProjectContext(context);
+
         // Phase 1: Initial analysis and delegation decision
-        var analysisPrompt = $@"User request: {userMessage}
+        var analysisPrompt = $@"## Demande de l'utilisateur
+{userMessage}
 
-Analyze this request and decide how to handle it:
-1. Can you answer directly? If simple, answer now.
-2. Need delegation? Output the delegation JSON.
-3. Need multiple agents? You can delegate sequentially.
+## Contexte du Projet
+{projectContext}
 
-Project context: {context.ProjectPath ?? "No project loaded"}";
+## Instructions
+Réponds DIRECTEMENT en français à la demande de l'utilisateur.
+- Utilise le contexte du projet ci-dessus pour personnaliser ta réponse
+- Si la question concerne le projet, analyse les fichiers listés
+- Ne délègue que si tu as besoin d'une expertise très spécifique
+- Sois conversationnel, utile et concret";
 
         var messages = new List<ChatMessage>(context.ChatHistory);
         messages.Add(new ChatMessage { Role = "user", Content = analysisPrompt });
@@ -196,18 +196,18 @@ Project context: {context.ProjectPath ?? "No project loaded"}";
         // Phase 2: Synthesize if we had delegations
         if (agentResponses.Any())
         {
-            var synthesisPrompt = $@"You delegated to the following agents and received their responses:
+            var synthesisPrompt = $@"Tu as délégué aux agents suivants et reçu leurs réponses:
 
 {string.Join("\n\n", agentResponses.Select(r => $"**{r.Agent}**: {r.Response}"))}
 
-Now provide a final, synthesized response to the user's original request:
+Fournis maintenant une réponse finale et synthétisée à la demande de l'utilisateur:
 ""{userMessage}""
 
-Include:
-1. Summary of findings
-2. Concrete recommendations
-3. Any code or solutions from the team
-4. Next steps if applicable";
+Ta réponse doit être EN FRANÇAIS et inclure:
+1. Résumé des trouvailles
+2. Recommandations concrètes
+3. Code ou solutions de l'équipe
+4. Prochaines étapes si applicable";
 
             messages.Add(new ChatMessage { Role = "user", Content = synthesisPrompt });
 
@@ -297,6 +297,54 @@ Include:
         {
             return null;
         }
+    }
+
+    private string BuildProjectContext(AgentContext context)
+    {
+        var sb = new StringBuilder();
+
+        // Project path
+        if (!string.IsNullOrEmpty(context.ProjectPath))
+        {
+            sb.AppendLine($"**Chemin du projet**: {context.ProjectPath}");
+            sb.AppendLine();
+        }
+        else
+        {
+            sb.AppendLine("**Aucun projet chargé** - L'utilisateur n'a pas encore sélectionné de projet.");
+            return sb.ToString();
+        }
+
+        // Relevant files from RAG
+        if (context.RelevantFiles.Any())
+        {
+            sb.AppendLine("### Fichiers pertinents trouvés:");
+            foreach (var (filePath, content) in context.RelevantFiles.Take(5))
+            {
+                var fileName = Path.GetFileName(filePath);
+                var preview = content.Length > 500 ? content.Substring(0, 500) + "..." : content;
+                sb.AppendLine($"\n**{fileName}** (`{filePath}`):");
+                sb.AppendLine("```csharp");
+                sb.AppendLine(preview);
+                sb.AppendLine("```");
+            }
+        }
+        else
+        {
+            sb.AppendLine("*Aucun fichier spécifique identifié pour cette requête.*");
+        }
+
+        // Relevant symbols
+        if (context.RelevantSymbols.Any())
+        {
+            sb.AppendLine("\n### Types et symboles identifiés:");
+            foreach (var symbol in context.RelevantSymbols.Take(10))
+            {
+                sb.AppendLine($"- **{symbol.Name}** ({symbol.Kind}) dans `{symbol.FilePath}`");
+            }
+        }
+
+        return sb.ToString();
     }
 
     private IEnumerable<string> ChunkText(string text, int chunkSize)
