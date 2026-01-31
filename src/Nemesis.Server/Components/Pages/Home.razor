@@ -6,6 +6,7 @@
 @inject CodeIndexer CodeIndexer
 @inject RagService RagService
 @inject ProjectCacheService ProjectCacheService
+@inject ProjectKnowledgeService ProjectKnowledgeService
 @inject Nemesis.Server.Services.ProjectService ProjectService
 @inject Nemesis.Server.Services.LogService LogService
 @inject ILlmProvider LlmProvider
@@ -254,6 +255,13 @@
                 CodeIndexer.LoadIndex(cachedIndex);
                 ProjectService.CurrentProject = cacheInfo.ProjectInfo;
 
+                // Charger la connaissance complète du projet
+                loadingStatus = "Chargement connaissance projet...";
+                StateHasChanged();
+                await ProjectKnowledgeService.LoadProjectAsync(path);
+                LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Info, "Knowledge",
+                    $"Projet analysé: {ProjectKnowledgeService.TotalFiles} fichiers, {ProjectKnowledgeService.TotalClasses} classes");
+
                 cacheStatus = new CacheStatusInfo
                 {
                     IsFromCache = true,
@@ -339,6 +347,13 @@
             await ProjectCacheService.SaveProjectIndexAsync(projectIndex, projectInfo);
             LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Info, "Cache", "Project cached for future use");
         }
+
+        // Charger la connaissance complète du projet pour l'agent
+        loadingStatus = "Analyse complète du projet...";
+        StateHasChanged();
+        await ProjectKnowledgeService.LoadProjectAsync(path);
+        LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Info, "Knowledge",
+            $"Projet analysé: {ProjectKnowledgeService.TotalFiles} fichiers, {ProjectKnowledgeService.TotalClasses} classes");
 
         LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Info, "Indexer",
             $"Project indexed: {projectInfo.TotalFiles} files, {projectInfo.TotalTypes} types");

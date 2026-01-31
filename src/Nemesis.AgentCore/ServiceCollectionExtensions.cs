@@ -60,14 +60,15 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<CodeIndexTool>()
         });
 
-        // Nemesis - Agent unifié all-in-one avec injection de PatchTool
+        // Nemesis - Agent unifié all-in-one avec injection complète
         services.AddSingleton<NemesisAgent>(sp =>
         {
             var llmProvider = sp.GetRequiredService<ILlmProvider>();
             var tools = sp.GetRequiredService<IEnumerable<ITool>>();
             var logger = sp.GetRequiredService<ILogger<NemesisAgent>>();
             var patchService = sp.GetRequiredService<PatchTool>() as IPatchService;
-            return new NemesisAgent(llmProvider, tools, logger, patchService);
+            var projectKnowledge = sp.GetRequiredService<ProjectKnowledgeService>();
+            return new NemesisAgent(llmProvider, tools, logger, patchService, projectKnowledge);
         });
 
         // Collection d'agents (contient uniquement Nemesis)
@@ -86,6 +87,9 @@ public static class ServiceCollectionExtensions
 
         // Project cache service
         services.AddSingleton<ProjectCacheService>();
+
+        // Project Knowledge Service - connaissance complète du projet
+        services.AddSingleton<ProjectKnowledgeService>();
 
         // Orchestrator
         services.AddSingleton<AgentOrchestrator>();

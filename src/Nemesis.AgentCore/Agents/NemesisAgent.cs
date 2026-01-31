@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
+using Nemesis.AgentCore.Services;
 using Nemesis.Shared.DTOs;
 using Nemesis.Shared.Interfaces;
 using Nemesis.Shared.Models;
@@ -11,11 +12,12 @@ namespace Nemesis.AgentCore.Agents;
 
 /// <summary>
 /// Nemesis - Agent IA intelligent pour le développement Unity
-/// Architecture: Recherche → Analyse → Raisonnement → Action
+/// Architecture: Connaissance Projet → Recherche → Analyse → Action
 /// </summary>
 public class NemesisAgent : BaseAgent
 {
     private readonly IPatchService? _patchService;
+    private readonly ProjectKnowledgeService? _projectKnowledge;
 
     // Cache de recherche pour la session
     private readonly Dictionary<string, string> _fileCache = new();
@@ -105,10 +107,12 @@ public class NewFile : MonoBehaviour
         ILlmProvider llmProvider,
         IEnumerable<ITool> tools,
         ILogger<NemesisAgent> logger,
-        IPatchService? patchService = null)
+        IPatchService? patchService = null,
+        ProjectKnowledgeService? projectKnowledge = null)
         : base(llmProvider, tools, logger)
     {
         _patchService = patchService;
+        _projectKnowledge = projectKnowledge;
     }
 
     public override async Task<AgentResponse> ProcessAsync(
@@ -372,14 +376,67 @@ public class NewFile : MonoBehaviour
         sb.AppendLine(userMessage);
         sb.AppendLine();
 
-        // Contexte du projet
-        if (!string.IsNullOrEmpty(context.ProjectPath))
+        // CONNAISSANCE COMPLÈTE DU PROJET (si disponible)
+        if (_projectKnowledge != null && _projectKnowledge.IsLoaded)
+        {
+            sb.AppendLine("## 🗺️ CARTE COMPLÈTE DU PROJET");
+            sb.AppendLine(_projectKnowledge.GetProjectMap());
+            sb.AppendLine();
+
+            // Recherche intelligente dans la connaissance du projet
+            var keywords = ExtractKeywords(userMessage);
+            var projectSearchResults = new List<SearchResult>();
+            foreach (var keyword in keywords.Take(5))
+            {
+                projectSearchResults.AddRange(_projectKnowledge.Search(keyword));
+            }
+
+            if (projectSearchResults.Any())
+            {
+                sb.AppendLine("## 🔍 Fichiers/Classes pertinents trouvés dans le projet");
+                foreach (var result in projectSearchResults.DistinctBy(r => r.FilePath).Take(15))
+                {
+                    sb.AppendLine($"- **{result.Name}** ({result.Type}) → `{result.FilePath}`");
+                    sb.AppendLine($"  {result.Description}");
+
+                    // Lire le contenu du fichier si trouvé
+                    var fileContent = _projectKnowledge.GetFileContent(result.FilePath);
+                    if (!string.IsNullOrEmpty(fileContent) && !_fileCache.ContainsKey(result.FilePath))
+                    {
+                        _fileCache[result.FilePath] = fileContent;
+                    }
+                }
+                sb.AppendLine();
+
+                // Inclure le contenu des fichiers les plus pertinents
+                sb.AppendLine("## 📄 Contenu des fichiers pertinents");
+                var filesToShow = projectSearchResults
+                    .DistinctBy(r => r.FilePath)
+                    .Take(5)
+                    .ToList();
+
+                foreach (var result in filesToShow)
+                {
+                    var content = _projectKnowledge.GetFileContent(result.FilePath);
+                    if (!string.IsNullOrEmpty(content))
+                    {
+                        sb.AppendLine($"### `{result.Name}`");
+                        sb.AppendLine("```csharp");
+                        sb.AppendLine(TruncateText(content, 3000));
+                        sb.AppendLine("```");
+                        sb.AppendLine();
+                    }
+                }
+            }
+        }
+        // Contexte du projet (fallback si pas de ProjectKnowledge)
+        else if (!string.IsNullOrEmpty(context.ProjectPath))
         {
             sb.AppendLine($"## Projet: `{context.ProjectPath}`");
             sb.AppendLine();
         }
 
-        // Résultats de recherche automatique
+        // Résultats de recherche automatique (outils)
         if (searchResults.Any())
         {
             sb.AppendLine("## Recherches automatiques effectuées");
