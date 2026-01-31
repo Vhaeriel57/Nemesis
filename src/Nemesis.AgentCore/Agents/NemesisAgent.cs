@@ -566,7 +566,20 @@ public class Example : MonoBehaviour
     private string GetDetailedToolStatus(ToolCall toolCall)
     {
         var toolName = toolCall.Name?.ToLower() ?? "";
-        var args = toolCall.Arguments ?? new Dictionary<string, object>();
+
+        // Parse Arguments JSON string into Dictionary
+        Dictionary<string, object> args;
+        try
+        {
+            args = !string.IsNullOrEmpty(toolCall.Arguments)
+                ? System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(toolCall.Arguments)
+                  ?? new Dictionary<string, object>()
+                : new Dictionary<string, object>();
+        }
+        catch
+        {
+            args = new Dictionary<string, object>();
+        }
 
         return toolName switch
         {
