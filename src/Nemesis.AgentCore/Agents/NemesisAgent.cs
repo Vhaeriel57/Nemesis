@@ -269,9 +269,10 @@ public class NewFile : MonoBehaviour
                 var searchTool = Tools.Values.FirstOrDefault(t => t.Definition.Name == "code_index");
                 if (searchTool != null)
                 {
+                    var toolContext = ToToolContext(context);
                     var searchResult = await searchTool.ExecuteAsync(
                         new Dictionary<string, object> { ["action"] = "search", ["query"] = keyword },
-                        context,
+                        toolContext,
                         cancellationToken);
 
                     if (searchResult.Success && !string.IsNullOrEmpty(searchResult.Output))
@@ -337,10 +338,12 @@ public class NewFile : MonoBehaviour
             var fsTool = Tools.Values.FirstOrDefault(t => t.Definition.Name == "file_system");
             if (fsTool != null)
             {
+                var toolContext = ToToolContext(context);
+
                 // Essayer avec le chemin tel quel
                 var result = await fsTool.ExecuteAsync(
                     new Dictionary<string, object> { ["action"] = "read_file", ["path"] = filePath },
-                    context,
+                    toolContext,
                     cancellationToken);
 
                 if (result.Success)
@@ -352,7 +355,7 @@ public class NewFile : MonoBehaviour
                     var fullPath = Path.Combine(context.ProjectPath, filePath);
                     result = await fsTool.ExecuteAsync(
                         new Dictionary<string, object> { ["action"] = "read_file", ["path"] = fullPath },
-                        context,
+                        toolContext,
                         cancellationToken);
 
                     if (result.Success)
@@ -366,6 +369,20 @@ public class NewFile : MonoBehaviour
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Convertit un AgentContext en ToolContext
+    /// </summary>
+    private static ToolContext ToToolContext(AgentContext context)
+    {
+        return new ToolContext
+        {
+            ProjectPath = context.ProjectPath ?? string.Empty,
+            CachePath = string.Empty,
+            NetworkEnabled = true,
+            AllowedPaths = new List<string> { context.ProjectPath ?? string.Empty }
+        };
     }
 
     private string BuildEnrichedPrompt(string userMessage, AgentContext context, Dictionary<string, string> searchResults)
