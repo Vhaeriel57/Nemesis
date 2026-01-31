@@ -1,6 +1,5 @@
 using System.Runtime.CompilerServices;
 using System.Text;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Nemesis.Shared.DTOs;
@@ -11,12 +10,11 @@ namespace Nemesis.AgentCore.Agents;
 
 /// <summary>
 /// Nemesis - Agent unifié expert en développement Unity/C#
-/// Capable de lire le projet, réfléchir, rechercher et générer du code complet
 /// </summary>
 public class NemesisAgent : BaseAgent
 {
     public override string Name => "Nemesis";
-    public override AgentType Type => AgentType.Manager; // Use Manager type for compatibility
+    public override AgentType Type => AgentType.Manager;
 
     public override string SystemPrompt => @"Tu es **Nemesis**, un assistant IA expert en développement de jeux Unity.
 
@@ -62,18 +60,6 @@ Tu génères du code **COMPLET et COHÉRENT**:
 
 ## Format de Tes Réponses
 
-### Pour les explications
-```markdown
-## Analyse
-[Ton analyse du problème]
-
-## Ce que j'ai trouvé dans ton projet
-[Fichiers consultés et observations]
-
-## Ma proposition
-[Solution détaillée]
-```
-
 ### Pour le code
 ```csharp
 // Utilise des blocs de code avec le langage spécifié
@@ -92,46 +78,12 @@ public class Example : MonoBehaviour
 +    // Nouvelles lignes ajoutées
 ```
 
-## Utilisation des Outils
-
-Tu as accès à ces outils - UTILISE-LES SYSTÉMATIQUEMENT:
-
-### `code_index` - Recherche dans le projet
-- `search`: Chercher des types, méthodes, classes
-- `definition`: Obtenir la définition complète d'un symbole
-- `references`: Trouver où un symbole est utilisé
-- `file_symbols`: Lister les symboles d'un fichier
-
-### `file_system` - Lecture de fichiers
-- `read_file`: Lire le contenu complet d'un fichier
-- `list_files`: Lister les fichiers d'un dossier
-
-### `patch` - Génération de patches
-- `create`: Créer un patch pour modification de fichier
-- `create_new`: Créer un nouveau fichier
-
-### `web_search` - Recherche web
-- Pour la documentation Unity, solutions StackOverflow, etc.
-
 ## Règles Absolues
 1. **TOUJOURS** lire les fichiers pertinents avant de proposer du code
 2. **JAMAIS** inventer du code sans connaître le contexte existant
 3. **TOUJOURS** proposer du code complet et fonctionnel
 4. **TOUJOURS** répondre en français de manière conversationnelle
-5. **TOUJOURS** citer les fichiers que tu as consultés
-
-## Exemple d'Interaction
-
-**Utilisateur**: ""Je veux que mon possédé puisse fermer les portes""
-
-**Toi**:
-1. Tu cherches ""Possédé"", ""Door"", ""Player"" dans le projet
-2. Tu lis les fichiers trouvés pour comprendre l'architecture
-3. Tu identifies ce qui existe et ce qui manque
-4. Tu proposes une solution complète avec:
-   - Analyse de l'existant
-   - Script complet si nouveau fichier nécessaire
-   - Ou modifications précises avec patch si fichier existant";
+5. **TOUJOURS** citer les fichiers que tu as consultés";
 
     public override List<string> Capabilities => new()
     {
@@ -180,31 +132,62 @@ Tu as accès à ces outils - UTILISE-LES SYSTÉMATIQUEMENT:
         // Build messages list
         var messages = BuildMessagesList(context.ChatHistory, mainPrompt);
 
-        // First, let the agent reason and potentially use tools
-        var thinkingPrompt = FormatMessagesForLlm(messages);
+        // Get tool definitions from base class Tools dictionary
+        var toolDefs = Tools.Values.Select(t => t.Definition).ToList();
 
         // Call LLM with tools available
-        var toolDefinitions = GetToolDefinitions();
         var llmResponse = await LlmProvider.CompleteWithToolsAsync(
             messages,
-            toolDefinitions,
+            toolDefs,
             SystemPrompt,
-            0.3, // Lower temperature for more consistent responses
-            8192, // Larger context for complete code
+            0.3,
+            8192,
             cancellationToken);
 
-        // Process any tool calls in the response
-        var (finalResponse, toolCalls) = await ProcessToolCalls(
-            llmResponse,
-            messages,
-            context,
-            cancellationToken);
+        // Process tool calls using base class method
+        var toolCall = ParseToolCall(llmResponse);
+        var iterations = 0;
+        var maxIterations = 5;
 
-        response.Content = finalResponse;
-        response.ToolCalls = toolCalls;
+        while (toolCall != null && iterations < maxIterations)
+        {
+            iterations++;
+            Logger.LogInformation("Nemesis executing tool: {Tool}", toolCall.Name);
+
+            var result = await ExecuteToolAsync(toolCall, context, cancellationToken);
+            toolCall.Result = result.Success ? result.Output : result.Error;
+            toolCall.IsComplete = true;
+            response.ToolCalls.Add(toolCall);
+
+            // Add tool result to messages and continue
+            messages.Add(new ChatMessage
+            {
+                Role = "assistant",
+                Content = llmResponse
+            });
+            messages.Add(new ChatMessage
+            {
+                Role = "tool",
+                Content = $"Résultat de l'outil {toolCall.Name}:\n```\n{toolCall.Result}\n```\n\nContinue ta réponse."
+            });
+
+            // Get next response
+            llmResponse = await LlmProvider.CompleteWithToolsAsync(
+                messages,
+                toolDefs,
+                SystemPrompt,
+                0.3,
+                8192,
+                cancellationToken);
+
+            toolCall = ParseToolCall(llmResponse);
+        }
+
+        // Clean up any remaining tool call JSON from final response
+        response.Content = CleanToolCallsFromResponse(llmResponse);
 
         // Extract any patches from the response
-        var patches = ExtractPatchesFromResponse(finalResponse, context.ProjectPath);
+        var patches = ExtractPatchesFromResponse(response.Content, context.ProjectPath);
         if (patches.Any())
         {
             response.GeneratedPatches = new PatchSet
@@ -221,7 +204,6 @@ Tu as accès à ces outils - UTILISE-LES SYSTÉMATIQUEMENT:
     {
         var messages = new List<ChatMessage>();
 
-        // Add relevant history (last 10 messages for context)
         foreach (var msg in history.TakeLast(10))
         {
             messages.Add(new ChatMessage
@@ -231,7 +213,6 @@ Tu as accès à ces outils - UTILISE-LES SYSTÉMATIQUEMENT:
             });
         }
 
-        // Add current message
         messages.Add(new ChatMessage
         {
             Role = "user",
@@ -241,193 +222,14 @@ Tu as accès à ces outils - UTILISE-LES SYSTÉMATIQUEMENT:
         return messages;
     }
 
-    private string FormatMessagesForLlm(List<ChatMessage> messages)
-    {
-        var sb = new StringBuilder();
-        foreach (var msg in messages)
-        {
-            var role = msg.Role?.ToLowerInvariant() switch
-            {
-                "system" => "Système",
-                "assistant" => "Nemesis",
-                _ => "Utilisateur"
-            };
-            sb.AppendLine($"**{role}**: {msg.Content}");
-            sb.AppendLine();
-        }
-        return sb.ToString();
-    }
-
-    private List<ToolDefinition> GetToolDefinitions()
-    {
-        var definitions = new List<ToolDefinition>();
-
-        foreach (var tool in Tools)
-        {
-            definitions.Add(new ToolDefinition
-            {
-                Name = tool.Name,
-                Description = tool.Description,
-                Parameters = tool.Parameters.ToDictionary(
-                    p => p.Name,
-                    p => new ToolParameter
-                    {
-                        Type = p.Type,
-                        Description = p.Description,
-                        Enum = p.AllowedValues
-                    }),
-                Required = tool.Parameters.Where(p => p.Required).Select(p => p.Name).ToList()
-            });
-        }
-
-        return definitions;
-    }
-
-    private async Task<(string Response, List<ToolCall> ToolCalls)> ProcessToolCalls(
-        string llmResponse,
-        List<ChatMessage> messages,
-        AgentContext context,
-        CancellationToken cancellationToken)
-    {
-        var toolCalls = new List<ToolCall>();
-        var currentResponse = llmResponse;
-        var iterations = 0;
-        var maxIterations = 5; // Limit tool call iterations
-
-        while (iterations < maxIterations)
-        {
-            // Try to parse tool call from response
-            var toolCall = ParseToolCall(currentResponse);
-            if (toolCall == null)
-                break;
-
-            iterations++;
-            Logger.LogInformation("Nemesis executing tool: {Tool} with action: {Action}",
-                toolCall.ToolName, toolCall.Parameters.GetValueOrDefault("action"));
-
-            // Execute the tool
-            var tool = Tools.FirstOrDefault(t =>
-                t.Name.Equals(toolCall.ToolName, StringComparison.OrdinalIgnoreCase));
-
-            if (tool != null)
-            {
-                try
-                {
-                    var result = await tool.ExecuteAsync(toolCall.Parameters, cancellationToken);
-                    toolCall.Result = result.Success ? result.Output : result.ErrorMessage;
-                    toolCalls.Add(toolCall);
-
-                    // Add tool result to messages and continue
-                    messages.Add(new ChatMessage
-                    {
-                        Role = "assistant",
-                        Content = currentResponse
-                    });
-                    messages.Add(new ChatMessage
-                    {
-                        Role = "user",
-                        Content = $"Résultat de l'outil {toolCall.ToolName}:\n```\n{toolCall.Result}\n```\n\nContinue ta réponse en utilisant ces informations."
-                    });
-
-                    // Get next response
-                    var toolDefinitions = GetToolDefinitions();
-                    currentResponse = await LlmProvider.CompleteWithToolsAsync(
-                        messages,
-                        toolDefinitions,
-                        SystemPrompt,
-                        0.3,
-                        8192,
-                        cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    Logger.LogError(ex, "Tool execution failed: {Tool}", toolCall.ToolName);
-                    toolCall.Result = $"Erreur: {ex.Message}";
-                    toolCalls.Add(toolCall);
-                    break;
-                }
-            }
-            else
-            {
-                Logger.LogWarning("Unknown tool requested: {Tool}", toolCall.ToolName);
-                break;
-            }
-        }
-
-        // Clean up any remaining tool call JSON from final response
-        currentResponse = CleanToolCallsFromResponse(currentResponse);
-
-        return (currentResponse, toolCalls);
-    }
-
-    private ToolCall? ParseToolCall(string response)
-    {
-        try
-        {
-            // Look for JSON tool call pattern
-            var jsonMatch = Regex.Match(
-                response,
-                @"\{[\s\S]*?""tool""\s*:\s*""([^""]+)""[\s\S]*?""parameters""\s*:\s*\{([^}]+)\}[\s\S]*?\}",
-                RegexOptions.IgnoreCase);
-
-            if (!jsonMatch.Success)
-                return null;
-
-            // Try to parse the full JSON
-            var startIndex = response.IndexOf('{');
-            var depth = 0;
-            var endIndex = startIndex;
-
-            for (int i = startIndex; i < response.Length; i++)
-            {
-                if (response[i] == '{') depth++;
-                else if (response[i] == '}') depth--;
-
-                if (depth == 0)
-                {
-                    endIndex = i;
-                    break;
-                }
-            }
-
-            var jsonStr = response.Substring(startIndex, endIndex - startIndex + 1);
-            var jsonDoc = JsonDocument.Parse(jsonStr);
-            var root = jsonDoc.RootElement;
-
-            if (!root.TryGetProperty("tool", out var toolProp))
-                return null;
-
-            var toolCall = new ToolCall
-            {
-                ToolName = toolProp.GetString() ?? "",
-                Parameters = new Dictionary<string, string>()
-            };
-
-            if (root.TryGetProperty("parameters", out var paramsProp))
-            {
-                foreach (var param in paramsProp.EnumerateObject())
-                {
-                    toolCall.Parameters[param.Name] = param.Value.ToString();
-                }
-            }
-
-            return toolCall;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
     private string CleanToolCallsFromResponse(string response)
     {
-        // Remove JSON tool call blocks from the response
         var cleaned = Regex.Replace(
             response,
             @"\{[\s\S]*?""tool""\s*:\s*""[^""]+""[\s\S]*?\}",
             "",
             RegexOptions.IgnoreCase);
-
+        cleaned = Regex.Replace(cleaned, @"```json\s*```", "", RegexOptions.IgnoreCase);
         return cleaned.Trim();
     }
 
@@ -444,17 +246,15 @@ Tu as accès à ces outils - UTILISE-LES SYSTÉMATIQUEMENT:
         sb.AppendLine($"**Projet**: `{context.ProjectPath}`");
         sb.AppendLine();
 
-        // Add relevant files with more content
         if (context.RelevantFiles.Any())
         {
             sb.AppendLine("### Fichiers pertinents identifiés:");
-            foreach (var (filePath, content) in context.RelevantFiles.Take(8))
+            foreach (var kvp in context.RelevantFiles.Take(8))
             {
-                var fileName = Path.GetFileName(filePath);
+                var filePath = kvp.Key;
+                var content = kvp.Value;
                 var relativePath = GetRelativePath(filePath, context.ProjectPath);
-
-                // Include more content for better understanding
-                var preview = content.Length > 1500 ? content.Substring(0, 1500) + "\n// ... (fichier tronqué)" : content;
+                var preview = content.Length > 1500 ? content.Substring(0, 1500) + "\n// ... (tronqué)" : content;
 
                 sb.AppendLine($"\n#### `{relativePath}`");
                 sb.AppendLine("```csharp");
@@ -463,7 +263,6 @@ Tu as accès à ces outils - UTILISE-LES SYSTÉMATIQUEMENT:
             }
         }
 
-        // Add symbols found
         if (context.RelevantSymbols.Any())
         {
             sb.AppendLine("\n### Types et classes identifiés:");
@@ -524,7 +323,7 @@ Tu as accès à ces outils - UTILISE-LES SYSTÉMATIQUEMENT:
             }
         }
 
-        // Also look for new file blocks with file path comments
+        // Also look for new file blocks
         var newFilePattern = @"```csharp\s*//\s*(?:File|Fichier|Path):\s*([^\n]+)\s*([\s\S]*?)```";
         var newFileMatches = Regex.Matches(response, newFilePattern, RegexOptions.IgnoreCase);
 
@@ -539,9 +338,11 @@ Tu as accès à ces outils - UTILISE-LES SYSTÉMATIQUEMENT:
                 {
                     Id = Guid.NewGuid().ToString(),
                     FilePath = Path.Combine(projectPath ?? "", filePath),
-                    PatchType = PatchType.Create,
-                    NewContent = content,
-                    Description = $"Nouveau fichier: {filePath}",
+                    Status = PatchStatus.Pending,
+                    ModifiedContent = content,
+                    OriginalContent = "",
+                    UnifiedDiff = $"--- /dev/null\n+++ b/{filePath}\n@@ -0,0 +1,{content.Split('\n').Length} @@\n" +
+                                  string.Join("\n", content.Split('\n').Select(l => $"+{l}")),
                     CreatedAt = DateTime.UtcNow
                 });
             }
@@ -557,7 +358,6 @@ Tu as accès à ces outils - UTILISE-LES SYSTÉMATIQUEMENT:
             var lines = diffContent.Split('\n');
             string? filePath = null;
 
-            // Find file path from diff header
             foreach (var line in lines)
             {
                 if (line.StartsWith("--- a/") || line.StartsWith("+++ b/"))
@@ -574,9 +374,10 @@ Tu as accès à ces outils - UTILISE-LES SYSTÉMATIQUEMENT:
             {
                 Id = Guid.NewGuid().ToString(),
                 FilePath = Path.Combine(projectPath ?? "", filePath),
-                PatchType = PatchType.Modify,
+                Status = PatchStatus.Pending,
                 UnifiedDiff = diffContent,
-                Description = $"Modification: {Path.GetFileName(filePath)}",
+                OriginalContent = "",
+                ModifiedContent = "",
                 CreatedAt = DateTime.UtcNow
             };
         }
@@ -598,16 +399,14 @@ Tu as accès à ces outils - UTILISE-LES SYSTÉMATIQUEMENT:
             AgentType = AgentType.Manager
         };
 
-        // For now, use non-streaming and chunk the response
         var response = await ProcessAsync(userMessage, context, cancellationToken);
 
-        // Emit tool calls if any
         if (response.ToolCalls.Any())
         {
             yield return new AgentStreamEvent
             {
-                Type = AgentStreamEventType.ToolUse,
-                Content = string.Join(", ", response.ToolCalls.Select(t => t.ToolName)),
+                Type = AgentStreamEventType.ToolCallComplete,
+                Content = string.Join(", ", response.ToolCalls.Select(t => t.Name)),
                 AgentType = AgentType.Manager
             };
         }
@@ -622,18 +421,7 @@ Tu as accès à ces outils - UTILISE-LES SYSTÉMATIQUEMENT:
                 Type = AgentStreamEventType.TextDelta,
                 Content = chunk
             };
-            await Task.Delay(5, cancellationToken); // Small delay for visual effect
-        }
-
-        // Emit patches if any
-        if (response.GeneratedPatches?.Patches.Any() == true)
-        {
-            yield return new AgentStreamEvent
-            {
-                Type = AgentStreamEventType.PatchGenerated,
-                Content = JsonSerializer.Serialize(response.GeneratedPatches),
-                AgentType = AgentType.Manager
-            };
+            await Task.Delay(5, cancellationToken);
         }
 
         yield return new AgentStreamEvent { Type = AgentStreamEventType.Complete };
