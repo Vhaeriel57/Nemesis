@@ -1,8 +1,10 @@
 @page "/chat"
 @using Nemesis.AgentCore.Orchestration
 @using Nemesis.AgentCore.Services
+@using Nemesis.AgentCore.Tools
 @inject AgentOrchestrator Orchestrator
 @inject ConversationService ConversationService
+@inject PatchTool PatchTool
 @inject Nemesis.Server.Services.ProjectService ProjectService
 @inject Nemesis.Server.Services.LogService LogService
 @inject IJSRuntime JS
@@ -148,7 +150,7 @@
                             </div>
                             @if (!string.IsNullOrEmpty(currentStatus))
                             {
-                                <span class="status-text">@currentStatus</span>
+                                <div class="status-text">@currentStatus</div>
                             }
                             @if (!string.IsNullOrEmpty(streamingContent))
                             {
@@ -167,6 +169,7 @@
                 <textarea @bind="inputMessage"
                           @bind:event="oninput"
                           @onkeydown="HandleKeyDown"
+                          @ref="textareaRef"
                           placeholder="Écris ton message... (Entrée pour envoyer, Shift+Entrée pour nouvelle ligne)"
                           class="chat-input"
                           disabled="@isLoading"
@@ -193,6 +196,9 @@
     private string streamingContent = "";
     private string currentStatus = "";
     private ElementReference messagesContainer;
+    private ElementReference textareaRef;
+    private AgentConversation? currentConversation;
+    private List<string> currentToolCalls = new();
 
     private class DisplayMessage
     {
@@ -204,8 +210,26 @@
 
     protected override async Task OnInitializedAsync()
     {
-        conversationId = Guid.NewGuid().ToString();
         await RefreshSessions();
+
+        // Create a new session by default
+        CreateNewConversation();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JS.InvokeVoidAsync("initTextareaAutoResize", textareaRef);
+        }
+    }
+
+    private void CreateNewConversation()
+    {
+        currentConversation = ConversationService.CreateConversation(
+            "Nouvelle conversation",
+            ProjectService.CurrentProjectPath);
+        conversationId = currentConversation.Id;
     }
 
     private Task RefreshSessions()
@@ -218,10 +242,11 @@
     private async Task LoadSession(string sessionId)
     {
         conversationId = sessionId;
-        var conversation = ConversationService.GetConversation(sessionId);
-        if (conversation != null)
+        currentConversation = ConversationService.GetConversation(sessionId);
+
+        if (currentConversation != null)
         {
-            displayMessages = conversation.Messages.Select(m => new DisplayMessage
+            displayMessages = currentConversation.Messages.Select(m => new DisplayMessage
             {
                 Content = m.Content,
                 Timestamp = m.Timestamp,
@@ -233,13 +258,23 @@
         await ScrollToBottom();
     }
 
-    private void NewSession()
+    private async Task NewSession()
     {
-        conversationId = Guid.NewGuid().ToString();
+        // Save current conversation if it has messages
+        if (currentConversation != null && currentConversation.Messages.Any())
+        {
+            await ConversationService.SaveConversation(currentConversation);
+        }
+
+        // Create new conversation
+        CreateNewConversation();
         displayMessages.Clear();
         streamingContent = "";
         currentStatus = "";
-        _ = RefreshSessions();
+        currentToolCalls.Clear();
+
+        await RefreshSessions();
+        StateHasChanged();
     }
 
     private async Task HandleKeyDown(KeyboardEventArgs e)
@@ -259,12 +294,30 @@
         inputMessage = "";
         isLoading = true;
         streamingContent = "";
-        currentStatus = "Analyse en cours...";
+        currentStatus = "🔍 Analyse de ta demande...";
+        currentToolCalls.Clear();
 
+        // Add user message to display
         displayMessages.Add(new DisplayMessage
         {
             Content = userMessage,
             IsUser = true,
+            Timestamp = DateTime.UtcNow
+        });
+
+        // Update conversation title if first message
+        if (currentConversation != null && currentConversation.Messages.Count == 0)
+        {
+            currentConversation.Title = userMessage.Length > 50
+                ? userMessage.Substring(0, 50) + "..."
+                : userMessage;
+        }
+
+        // Add message to ConversationService
+        ConversationService.AddMessage(conversationId, new AgentMessage
+        {
+            Content = userMessage,
+            Sender = new MessageSender { Type = SenderType.User, Name = "User" },
             Timestamp = DateTime.UtcNow
         });
 
@@ -279,18 +332,21 @@
                 switch (evt.Type)
                 {
                     case AgentStreamEventType.AgentThinking:
-                        currentStatus = evt.Content ?? "Réflexion...";
+                        currentStatus = evt.Content ?? "🤔 Réflexion...";
                         StateHasChanged();
                         break;
 
                     case AgentStreamEventType.ToolCallComplete:
-                        currentStatus = $"Outil: {evt.Content}";
+                        var toolName = evt.Content ?? "outil";
+                        currentToolCalls.Add(toolName);
+                        currentStatus = GetToolStatusMessage(toolName);
                         StateHasChanged();
                         break;
 
                     case AgentStreamEventType.TextDelta:
                         if (evt.Content != null)
                         {
+                            currentStatus = "✍️ Rédaction de la réponse...";
                             streamingContent += evt.Content;
                             StateHasChanged();
                         }
@@ -299,15 +355,28 @@
                     case AgentStreamEventType.Complete:
                         break;
                 }
+
+                await ScrollToBottom();
             }
 
             if (!string.IsNullOrEmpty(streamingContent))
             {
-                displayMessages.Add(new DisplayMessage
+                var assistantMessage = new DisplayMessage
                 {
                     Content = streamingContent,
                     IsUser = false,
-                    Timestamp = DateTime.UtcNow
+                    Timestamp = DateTime.UtcNow,
+                    ToolNames = currentToolCalls.ToList()
+                };
+                displayMessages.Add(assistantMessage);
+
+                // Add to ConversationService
+                ConversationService.AddMessage(conversationId, new AgentMessage
+                {
+                    Content = streamingContent,
+                    Sender = new MessageSender { Type = SenderType.Agent, Name = "Nemesis" },
+                    Timestamp = DateTime.UtcNow,
+                    ToolCalls = currentToolCalls.Select(t => new ToolCall { Name = t }).ToList()
                 });
             }
         }
@@ -326,10 +395,30 @@
             isLoading = false;
             streamingContent = "";
             currentStatus = "";
+            currentToolCalls.Clear();
+
+            // Save conversation after each exchange
+            if (currentConversation != null)
+            {
+                await ConversationService.SaveConversation(currentConversation);
+            }
+
             StateHasChanged();
             await ScrollToBottom();
             await RefreshSessions();
         }
+    }
+
+    private string GetToolStatusMessage(string toolName)
+    {
+        return toolName.ToLower() switch
+        {
+            "file_system" => "📂 Lecture des fichiers du projet...",
+            "code_index" => "🔎 Recherche dans l'index de code...",
+            "web_search" => "🌐 Recherche sur le web...",
+            "patch" => "📝 Création d'un patch...",
+            _ => $"🔧 Utilisation de l'outil {toolName}..."
+        };
     }
 
     private async Task ScrollToBottom()
@@ -369,7 +458,7 @@
             m => {
                 var lang = m.Groups[1].Value;
                 var code = m.Groups[2].Value.Trim();
-                var langClass = !string.IsNullOrEmpty(lang) ? $" language-{lang}" : "";
+                var langClass = !string.IsNullOrEmpty(lang) ? $"language-{lang}" : "language-csharp";
                 return $"<div class=\"code-block\"><div class=\"code-header\"><span class=\"code-lang\">{(string.IsNullOrEmpty(lang) ? "code" : lang)}</span><button class=\"copy-btn\" onclick=\"copyCode(this)\">Copier</button></div><pre><code class=\"{langClass}\">{code}</code></pre></div>";
             });
 

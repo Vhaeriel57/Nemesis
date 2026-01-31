@@ -6,30 +6,30 @@
 <PageTitle>Tasks - Nemesis</PageTitle>
 
 <div class="page-container">
-    <h1>Task Management</h1>
+    <h1>Gestion des Tâches</h1>
 
     <section class="section">
-        <h2>Create New Task</h2>
+        <h2>Créer une nouvelle tâche</h2>
         <div class="task-form">
             <div class="form-group">
-                <label>Objective</label>
+                <label>Objectif</label>
                 <textarea @bind="newTaskObjective" rows="3" class="input-text"
-                          placeholder="Describe what you want to accomplish..."></textarea>
+                          placeholder="Décris ce que tu veux accomplir..."></textarea>
             </div>
             <div class="form-group">
-                <label>Assigned Agent</label>
-                <select @bind="newTaskAgent" class="input-select">
-                    <option value="SeniorUnityCSharp">Unity Expert</option>
-                    <option value="Generalist">Generalist</option>
-                    <option value="Researcher">Researcher</option>
-                </select>
+                <label>Agent</label>
+                <div class="agent-badge">
+                    <span class="agent-icon">🧠</span>
+                    <span>Nemesis</span>
+                    <span class="agent-desc">Agent unifié expert Unity/C#</span>
+                </div>
             </div>
             <div class="button-group">
                 <button class="btn btn-primary" @onclick="CreateTask" disabled="@string.IsNullOrWhiteSpace(newTaskObjective)">
-                    Create Task
+                    Créer la tâche
                 </button>
                 <button class="btn btn-secondary" @onclick="CreatePlan" disabled="@string.IsNullOrWhiteSpace(newTaskObjective)">
-                    Create Plan First
+                    Planifier d'abord
                 </button>
             </div>
         </div>
@@ -38,7 +38,7 @@
     @if (currentPlan != null)
     {
         <section class="section">
-            <h2>Current Plan</h2>
+            <h2>Plan actuel</h2>
             <div class="plan-card">
                 <h3>@currentPlan.Objective</h3>
                 <div class="plan-steps">
@@ -47,27 +47,27 @@
                         <div class="plan-step">
                             <span class="step-number">@step.Order</span>
                             <span class="step-description">@step.Description</span>
-                            <span class="step-agent">@step.SuggestedAgent</span>
+                            <span class="step-agent">🧠 Nemesis</span>
                             @if (step.RequiresWebSearch)
                             {
-                                <span class="step-badge">Web Search</span>
+                                <span class="step-badge">🌐 Web</span>
                             }
                         </div>
                     }
                 </div>
                 <div class="button-group">
-                    <button class="btn btn-primary" @onclick="ExecutePlan">Execute Plan</button>
-                    <button class="btn btn-secondary" @onclick="ClearPlan">Discard</button>
+                    <button class="btn btn-primary" @onclick="ExecutePlan">Exécuter le plan</button>
+                    <button class="btn btn-secondary" @onclick="ClearPlan">Annuler</button>
                 </div>
             </div>
         </section>
     }
 
     <section class="section">
-        <h2>Task Queue</h2>
+        <h2>File d'attente</h2>
         @if (!queuedTasks.Any() && currentTask == null)
         {
-            <p class="empty-message">No tasks in queue.</p>
+            <p class="empty-message">Aucune tâche en file d'attente.</p>
         }
         else
         {
@@ -75,15 +75,15 @@
             {
                 <div class="task-card current">
                     <div class="task-header">
-                        <span class="task-status in-progress">In Progress</span>
-                        <span class="task-agent">@currentTask.AssignedAgent</span>
+                        <span class="task-status in-progress">En cours</span>
+                        <span class="task-agent">🧠 Nemesis</span>
                     </div>
                     <h3>@currentTask.Title</h3>
                     <p>@currentTask.Description</p>
                     @if (currentTask.Steps.Any())
                     {
                         <div class="task-progress">
-                            Step @currentTask.CurrentStep of @currentTask.Steps.Count
+                            Étape @currentTask.CurrentStep sur @currentTask.Steps.Count
                         </div>
                     }
                 </div>
@@ -93,8 +93,8 @@
             {
                 <div class="task-card">
                     <div class="task-header">
-                        <span class="task-status @task.Status.ToString().ToLower()">@task.Status</span>
-                        <span class="task-agent">@task.AssignedAgent</span>
+                        <span class="task-status @task.Status.ToString().ToLower()">@GetStatusLabel(task.Status)</span>
+                        <span class="task-agent">🧠 Nemesis</span>
                     </div>
                     <h3>@task.Title</h3>
                     <p>@task.Description</p>
@@ -104,10 +104,10 @@
     </section>
 
     <section class="section">
-        <h2>Completed Tasks</h2>
+        <h2>Tâches terminées</h2>
         @if (!completedTasks.Any())
         {
-            <p class="empty-message">No completed tasks.</p>
+            <p class="empty-message">Aucune tâche terminée.</p>
         }
         else
         {
@@ -115,20 +115,20 @@
             {
                 <div class="task-card completed">
                     <div class="task-header">
-                        <span class="task-status @task.Status.ToString().ToLower()">@task.Status</span>
+                        <span class="task-status @task.Status.ToString().ToLower()">@GetStatusLabel(task.Status)</span>
                         <span class="task-time">@task.CompletedAt?.ToLocalTime().ToString("g")</span>
                     </div>
                     <h3>@task.Title</h3>
                     @if (!string.IsNullOrEmpty(task.Result))
                     {
                         <details>
-                            <summary>View Result</summary>
+                            <summary>Voir le résultat</summary>
                             <pre class="task-result">@task.Result</pre>
                         </details>
                     }
                     @if (!string.IsNullOrEmpty(task.ErrorMessage))
                     {
-                        <p class="task-error">Error: @task.ErrorMessage</p>
+                        <p class="task-error">Erreur: @task.ErrorMessage</p>
                     }
                 </div>
             }
@@ -138,7 +138,6 @@
 
 @code {
     private string newTaskObjective = "";
-    private string newTaskAgent = "SeniorUnityCSharp";
     private TaskPlan? currentPlan;
     private AgentTask? currentTask;
     private List<AgentTask> queuedTasks = new();
@@ -155,6 +154,18 @@
         Orchestrator.TaskFailed += OnTaskFailed;
     }
 
+    private string GetStatusLabel(AgentTaskStatus status)
+    {
+        return status switch
+        {
+            AgentTaskStatus.Pending => "En attente",
+            AgentTaskStatus.InProgress => "En cours",
+            AgentTaskStatus.Completed => "Terminé",
+            AgentTaskStatus.Failed => "Échec",
+            _ => status.ToString()
+        };
+    }
+
     private async Task CreateTask()
     {
         if (string.IsNullOrWhiteSpace(newTaskObjective))
@@ -164,7 +175,7 @@
         {
             Title = newTaskObjective.Length > 50 ? newTaskObjective.Substring(0, 50) + "..." : newTaskObjective,
             Description = newTaskObjective,
-            AssignedAgent = Enum.Parse<AgentType>(newTaskAgent)
+            AssignedAgent = AgentType.Manager // Uses Nemesis agent
         };
 
         Orchestrator.QueueTask(task);
@@ -188,12 +199,12 @@
 
         try
         {
-            currentPlan = await Orchestrator.CreatePlanAsync(newTaskObjective);
+            currentPlan = await Orchestrator.CreatePlanAsync(newTaskObjective, AgentType.Manager);
             StateHasChanged();
         }
         catch (Exception ex)
         {
-            LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Error, "Planner", $"Plan creation failed: {ex.Message}");
+            LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Error, "Planner", $"Échec de la planification: {ex.Message}");
         }
     }
 
@@ -206,9 +217,9 @@
         {
             var task = new AgentTask
             {
-                Title = $"Step {step.Order}: {step.Description.Substring(0, Math.Min(40, step.Description.Length))}...",
+                Title = $"Étape {step.Order}: {step.Description.Substring(0, Math.Min(40, step.Description.Length))}...",
                 Description = step.Description,
-                AssignedAgent = step.SuggestedAgent
+                AssignedAgent = AgentType.Manager // All tasks handled by Nemesis
             };
 
             Orchestrator.QueueTask(task);
