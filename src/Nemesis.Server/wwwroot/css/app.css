@@ -1414,3 +1414,517 @@ details summary:hover {
     padding: 0.25rem 0.75rem;
     font-size: 0.8rem;
 }
+
+/* ============================================
+   New Nemesis Chat Interface Styles
+   ============================================ */
+
+/* Sidebar Header */
+.sidebar-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 1rem;
+}
+
+.sidebar-header h3 {
+    margin: 0;
+    font-size: 1.25rem;
+    color: var(--text-primary);
+    text-transform: none;
+}
+
+.nemesis-logo {
+    font-size: 1.5rem;
+}
+
+/* New Session Button */
+.new-session-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: var(--accent-primary);
+    border-radius: var(--border-radius);
+    color: white;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 1rem;
+}
+
+.new-session-btn:hover {
+    background: #d13551;
+}
+
+.new-session-btn .icon {
+    font-size: 1.25rem;
+    font-weight: bold;
+}
+
+/* Sessions Section */
+.sessions-section {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.sessions-section h4 {
+    margin: 0 0 0.5rem;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+}
+
+.sessions-section .session-list {
+    max-height: none;
+    flex: 1;
+    overflow-y: auto;
+}
+
+.session-item .session-info {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow: hidden;
+}
+
+.session-item .session-name {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.session-item .session-date {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
+.session-item .session-count {
+    background: var(--bg-primary);
+    padding: 0.15rem 0.4rem;
+    border-radius: 1rem;
+    font-size: 0.65rem;
+    color: var(--text-muted);
+}
+
+.session-item.active .session-count {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+.no-sessions {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    font-style: italic;
+    padding: 1rem 0;
+    text-align: center;
+}
+
+/* Sidebar Footer */
+.sidebar-footer {
+    margin-top: auto;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.project-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+}
+
+.project-status .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.project-status.indexed .status-dot {
+    background: var(--accent-success);
+    box-shadow: 0 0 6px var(--accent-success);
+}
+
+.project-status.not-indexed .status-dot {
+    background: var(--accent-warning);
+}
+
+.project-status a {
+    color: var(--accent-warning);
+    text-decoration: none;
+}
+
+.project-status a:hover {
+    text-decoration: underline;
+}
+
+/* Chat Welcome Screen */
+.chat-welcome {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 3rem;
+    height: 100%;
+}
+
+.welcome-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+}
+
+.chat-welcome h2 {
+    margin: 0 0 0.5rem;
+    color: var(--text-primary);
+}
+
+.chat-welcome p {
+    color: var(--text-secondary);
+    margin: 0.5rem 0;
+}
+
+.capabilities {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin: 1.5rem 0;
+}
+
+.capability {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.5rem 1rem;
+    background: var(--bg-secondary);
+    border-radius: 2rem;
+    font-size: 0.85rem;
+}
+
+.cap-icon {
+    font-size: 1rem;
+}
+
+.warning-text {
+    color: var(--accent-warning);
+    margin-top: 1rem;
+}
+
+.ready-text {
+    color: var(--accent-success);
+    margin-top: 1rem;
+}
+
+/* Updated Message Styles */
+.chat-messages .message {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+    padding: 0;
+    background: none;
+}
+
+.chat-messages .message.user {
+    flex-direction: row-reverse;
+    margin-left: 3rem;
+    margin-right: 0;
+}
+
+.chat-messages .message.assistant {
+    margin-right: 3rem;
+    margin-left: 0;
+}
+
+.message-avatar {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-tertiary);
+    border-radius: 50%;
+    font-size: 1.25rem;
+}
+
+.message-avatar.user-avatar {
+    background: var(--accent-primary);
+}
+
+.message .message-content {
+    flex: 1;
+    background: var(--bg-secondary);
+    padding: 1rem;
+    border-radius: var(--border-radius);
+    max-width: 100%;
+}
+
+.message.user .message-content {
+    background: var(--bg-tertiary);
+}
+
+.message .message-header {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+.message .sender {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.message .time {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.message .message-body {
+    line-height: 1.7;
+    color: var(--text-primary);
+}
+
+.message .message-body h3,
+.message .message-body h4 {
+    margin: 1rem 0 0.5rem;
+    color: var(--accent-primary);
+}
+
+.message .message-body h3:first-child,
+.message .message-body h4:first-child {
+    margin-top: 0;
+}
+
+/* Tools Used */
+.tools-used {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.tools-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.tool-badge {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    background: var(--accent-secondary);
+    border-radius: 1rem;
+    font-size: 0.7rem;
+    color: var(--text-primary);
+}
+
+/* Loading State */
+.message.loading .message-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.typing-indicator {
+    display: flex;
+    gap: 4px;
+}
+
+.typing-indicator span {
+    width: 8px;
+    height: 8px;
+    background: var(--accent-primary);
+    border-radius: 50%;
+    animation: bounce-typing 1.4s infinite ease-in-out;
+}
+
+.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes bounce-typing {
+    0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
+    40% { transform: scale(1); opacity: 1; }
+}
+
+.status-text {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.streaming-response {
+    margin-top: 0.5rem;
+}
+
+/* Code Block Styles with Syntax Highlighting */
+.code-block {
+    margin: 1rem 0;
+    background: var(--bg-primary);
+    border-radius: var(--border-radius);
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+}
+
+.code-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 1rem;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.code-lang {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.copy-btn {
+    padding: 0.25rem 0.5rem;
+    background: var(--bg-tertiary);
+    border: none;
+    border-radius: 4px;
+    color: var(--text-secondary);
+    font-size: 0.7rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.copy-btn:hover {
+    background: var(--accent-primary);
+    color: white;
+}
+
+.code-block pre {
+    margin: 0;
+    padding: 1rem;
+    overflow-x: auto;
+}
+
+.code-block code {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    line-height: 1.5;
+    background: none;
+    padding: 0;
+}
+
+/* Inline Code */
+.inline-code {
+    background: var(--bg-tertiary);
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    color: var(--accent-primary);
+}
+
+/* Syntax Highlighting Colors */
+.code-block .language-csharp .keyword,
+.code-block code .keyword {
+    color: #c586c0;
+}
+
+.code-block .language-csharp .type,
+.code-block code .type {
+    color: #4ec9b0;
+}
+
+.code-block .language-csharp .string,
+.code-block code .string {
+    color: #ce9178;
+}
+
+.code-block .language-csharp .comment,
+.code-block code .comment {
+    color: #6a9955;
+}
+
+.code-block .language-csharp .number,
+.code-block code .number {
+    color: #b5cea8;
+}
+
+/* Chat Input Area Update */
+.chat-input-area {
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-color);
+}
+
+.input-container {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-end;
+}
+
+.chat-input {
+    flex: 1;
+    padding: 0.75rem 1rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.95rem;
+    resize: none;
+    min-height: 44px;
+    max-height: 200px;
+}
+
+.chat-input:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+}
+
+.chat-input::placeholder {
+    color: var(--text-muted);
+}
+
+.send-btn {
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent-primary);
+    border: none;
+    border-radius: var(--border-radius);
+    color: white;
+    font-size: 1.25rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.send-btn:hover:not(:disabled) {
+    background: #d13551;
+    transform: scale(1.05);
+}
+
+.send-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.input-hint {
+    margin-top: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+/* Chat Sidebar Update */
+.chat-page .chat-sidebar {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}

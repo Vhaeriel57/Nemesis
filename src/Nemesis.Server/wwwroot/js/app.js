@@ -114,6 +114,32 @@ window.notify = function(message, type) {
 
 console.log('Nemesis client scripts loaded');
 
+// Copy code from code blocks
+window.copyCode = function(button) {
+    var codeBlock = button.closest('.code-block');
+    if (codeBlock) {
+        var code = codeBlock.querySelector('code');
+        if (code) {
+            var text = code.textContent;
+            navigator.clipboard.writeText(text).then(function() {
+                var originalText = button.textContent;
+                button.textContent = 'Copié!';
+                button.style.background = '#00d26a';
+                setTimeout(function() {
+                    button.textContent = originalText;
+                    button.style.background = '';
+                }, 1500);
+            }).catch(function(err) {
+                console.error('Failed to copy code:', err);
+                button.textContent = 'Erreur';
+                setTimeout(function() {
+                    button.textContent = 'Copier';
+                }, 1500);
+            });
+        }
+    }
+};
+
 // Folder picker - simple prompt dialog
 window.pickFolder = function(currentPath) {
     var defaultPath = currentPath || 'C:\\Projects\\MyUnityProject';

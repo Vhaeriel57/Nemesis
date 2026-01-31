@@ -11,156 +11,175 @@
 
 <div class="page-container chat-page">
     <div class="chat-sidebar">
-        <h3>Agents</h3>
-        <div class="agent-list">
-            <button class="agent-btn manager @(currentAgent == AgentType.Manager ? "active" : "")"
-                    @onclick="() => SelectAgent(AgentType.Manager)">
-                <span class="agent-icon">&#128101;</span>
-                <span class="agent-name">Manager</span>
-                <span class="agent-desc">Coordonne l'équipe</span>
-            </button>
-            <button class="agent-btn @(currentAgent == AgentType.SeniorUnityCSharp ? "active" : "")"
-                    @onclick="() => SelectAgent(AgentType.SeniorUnityCSharp)">
-                <span class="agent-icon">&#128187;</span>
-                <span class="agent-name">Unity Expert</span>
-                <span class="agent-desc">Architecture, performance</span>
-            </button>
-            <button class="agent-btn @(currentAgent == AgentType.Generalist ? "active" : "")"
-                    @onclick="() => SelectAgent(AgentType.Generalist)">
-                <span class="agent-icon">&#128161;</span>
-                <span class="agent-name">Generalist</span>
-                <span class="agent-desc">Q&A, explications</span>
-            </button>
-            <button class="agent-btn @(currentAgent == AgentType.Researcher ? "active" : "")"
-                    @onclick="() => SelectAgent(AgentType.Researcher)">
-                <span class="agent-icon">&#128269;</span>
-                <span class="agent-name">Researcher</span>
-                <span class="agent-desc">Recherche web</span>
-            </button>
+        <div class="sidebar-header">
+            <span class="nemesis-logo">🧠</span>
+            <h3>Nemesis</h3>
         </div>
 
-        <h3>Sessions</h3>
-        <div class="session-list">
-            @foreach (var session in sessions.Take(5))
+        <div class="new-session-btn" @onclick="NewSession">
+            <span class="icon">+</span>
+            <span>Nouvelle conversation</span>
+        </div>
+
+        <div class="sessions-section">
+            <h4>Historique</h4>
+            <div class="session-list">
+                @if (!sessions.Any())
+                {
+                    <div class="no-sessions">Aucune conversation</div>
+                }
+                @foreach (var session in sessions.OrderByDescending(s => s.LastMessageAt).Take(20))
+                {
+                    <div class="session-item @(session.Id == conversationId ? "active" : "")"
+                         @onclick="() => LoadSession(session.Id)">
+                        <div class="session-info">
+                            <span class="session-name">@TruncateText(session.Name, 25)</span>
+                            <span class="session-date">@FormatDate(session.LastMessageAt)</span>
+                        </div>
+                        <span class="session-count">@session.MessageCount</span>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="sidebar-footer">
+            @if (ProjectService.IsProjectIndexed)
             {
-                <div class="session-item @(session.Id == conversationId ? "active" : "")"
-                     @onclick="() => LoadSession(session.Id)">
-                    <span class="session-name">@(session.Name.Length > 20 ? session.Name.Substring(0, 20) + "..." : session.Name)</span>
-                    <span class="session-meta">@session.MessageCount msgs</span>
+                <div class="project-status indexed">
+                    <span class="status-dot"></span>
+                    <span>Projet indexé</span>
                 </div>
             }
-        </div>
-        <div class="session-actions">
-            <button class="btn btn-small" @onclick="NewSession">Nouvelle</button>
+            else
+            {
+                <div class="project-status not-indexed">
+                    <span class="status-dot"></span>
+                    <a href="/">Indexer un projet</a>
+                </div>
+            }
         </div>
     </div>
 
     <div class="chat-main">
-        <div class="chat-header">
-            <span class="current-agent-display">
-                @GetAgentIcon(currentAgent) @GetAgentDisplayName(currentAgent)
-            </span>
-            @if (currentAgent == AgentType.Manager)
-            {
-                <span class="team-mode-badge">Mode équipe activé</span>
-            }
-        </div>
-
         <div class="chat-messages" @ref="messagesContainer">
             @if (!displayMessages.Any())
             {
-                <div class="chat-empty">
-                    <h2>Bienvenue</h2>
-                    @if (currentAgent == AgentType.Manager)
+                <div class="chat-welcome">
+                    <div class="welcome-icon">🧠</div>
+                    <h2>Bonjour!</h2>
+                    <p>Je suis <strong>Nemesis</strong>, ton assistant expert en développement Unity.</p>
+                    <div class="capabilities">
+                        <div class="capability">
+                            <span class="cap-icon">🎮</span>
+                            <span>Unity 6 & URP</span>
+                        </div>
+                        <div class="capability">
+                            <span class="cap-icon">💻</span>
+                            <span>C# Expert</span>
+                        </div>
+                        <div class="capability">
+                            <span class="cap-icon">🌐</span>
+                            <span>Netcode</span>
+                        </div>
+                        <div class="capability">
+                            <span class="cap-icon">🔍</span>
+                            <span>Recherche Web</span>
+                        </div>
+                    </div>
+                    @if (!ProjectService.IsProjectIndexed)
                     {
-                        <p>Le <strong>Manager</strong> coordonne l'équipe d'agents.</p>
-                        <p>Il délègue aux spécialistes et synthétise leurs réponses.</p>
+                        <p class="warning-text">
+                            <span>⚠️</span> Aucun projet chargé. <a href="/">Charge un projet</a> pour que je puisse l'analyser.
+                        </p>
                     }
                     else
                     {
-                        <p>Discutez avec <strong>@GetAgentDisplayName(currentAgent)</strong>.</p>
-                    }
-                    @if (!ProjectService.IsProjectIndexed)
-                    {
-                        <p class="warning">Projet non indexé. <a href="/">Indexez d'abord</a>.</p>
+                        <p class="ready-text">
+                            <span>✅</span> Projet prêt! Pose-moi une question sur ton code.
+                        </p>
                     }
                 </div>
             }
 
             @foreach (var msg in displayMessages)
             {
-                <div class="message @GetMessageCssClass(msg)">
-                    <div class="message-header">
-                        <span class="message-sender">
-                            @if (msg.IsUser)
-                            {
-                                <span>Vous</span>
-                            }
-                            else
-                            {
-                                <span>@GetAgentIcon(msg.AgentType) @GetAgentDisplayName(msg.AgentType)</span>
-                            }
-                        </span>
-                        <span class="message-time">@msg.Timestamp.ToLocalTime().ToString("HH:mm")</span>
-                        @if (msg.IsDelegation && msg.TargetAgent.HasValue)
-                        {
-                            <span class="delegation-arrow">→ @GetAgentDisplayName(msg.TargetAgent)</span>
-                        }
-                    </div>
-                    <div class="message-body @(msg.IsThinking ? "thinking-text" : "")">
-                        @if (msg.IsThinking)
-                        {
-                            <em>@msg.Content</em>
-                        }
-                        else
-                        {
-                            @((MarkupString)FormatMessage(msg.Content))
-                        }
-                    </div>
-                    @if (msg.ToolNames.Any())
+                <div class="message @(msg.IsUser ? "user" : "assistant")">
+                    @if (!msg.IsUser)
                     {
-                        <div class="message-tools">
-                            @foreach (var tool in msg.ToolNames)
-                            {
-                                <span class="tool-tag">@tool</span>
-                            }
+                        <div class="message-avatar">🧠</div>
+                    }
+                    <div class="message-content">
+                        <div class="message-header">
+                            <span class="sender">@(msg.IsUser ? "Vous" : "Nemesis")</span>
+                            <span class="time">@msg.Timestamp.ToLocalTime().ToString("HH:mm")</span>
                         </div>
+                        <div class="message-body">
+                            @((MarkupString)FormatMessage(msg.Content))
+                        </div>
+                        @if (msg.ToolNames.Any())
+                        {
+                            <div class="tools-used">
+                                <span class="tools-label">Outils utilisés:</span>
+                                @foreach (var tool in msg.ToolNames)
+                                {
+                                    <span class="tool-badge">@tool</span>
+                                }
+                            </div>
+                        }
+                    </div>
+                    @if (msg.IsUser)
+                    {
+                        <div class="message-avatar user-avatar">👤</div>
                     }
                 </div>
             }
 
             @if (isLoading)
             {
-                <div class="message assistant loading-message">
-                    <div class="message-header">
-                        <span class="message-sender">@GetAgentIcon(activeAgent) @GetAgentDisplayName(activeAgent)</span>
-                    </div>
-                    <div class="message-body">
-                        <span class="typing-dots"><span></span><span></span><span></span></span>
-                        @if (!string.IsNullOrEmpty(currentStatus))
-                        {
-                            <span class="loading-status">@currentStatus</span>
-                        }
-                        @if (!string.IsNullOrEmpty(streamingContent))
-                        {
-                            <div class="streaming-text">@((MarkupString)FormatMessage(streamingContent))</div>
-                        }
+                <div class="message assistant loading">
+                    <div class="message-avatar">🧠</div>
+                    <div class="message-content">
+                        <div class="message-header">
+                            <span class="sender">Nemesis</span>
+                        </div>
+                        <div class="message-body">
+                            <div class="typing-indicator">
+                                <span></span><span></span><span></span>
+                            </div>
+                            @if (!string.IsNullOrEmpty(currentStatus))
+                            {
+                                <span class="status-text">@currentStatus</span>
+                            }
+                            @if (!string.IsNullOrEmpty(streamingContent))
+                            {
+                                <div class="streaming-response">
+                                    @((MarkupString)FormatMessage(streamingContent))
+                                </div>
+                            }
+                        </div>
                     </div>
                 </div>
             }
         </div>
 
         <div class="chat-input-area">
-            <textarea @bind="inputMessage"
-                      @bind:event="oninput"
-                      @onkeydown="HandleKeyDown"
-                      placeholder="Message... (Entrée = envoyer)"
-                      class="chat-textarea"
-                      disabled="@isLoading"
-                      rows="2"></textarea>
-            <button class="send-button" @onclick="SendMessage" disabled="@(isLoading || string.IsNullOrWhiteSpace(inputMessage))">
-                ➤
-            </button>
+            <div class="input-container">
+                <textarea @bind="inputMessage"
+                          @bind:event="oninput"
+                          @onkeydown="HandleKeyDown"
+                          placeholder="Écris ton message... (Entrée pour envoyer, Shift+Entrée pour nouvelle ligne)"
+                          class="chat-input"
+                          disabled="@isLoading"
+                          rows="1"></textarea>
+                <button class="send-btn"
+                        @onclick="SendMessage"
+                        disabled="@(isLoading || string.IsNullOrWhiteSpace(inputMessage))">
+                    <span>➤</span>
+                </button>
+            </div>
+            <div class="input-hint">
+                Nemesis peut lire ton projet, générer du code et créer des patches.
+            </div>
         </div>
     </div>
 </div>
@@ -170,24 +189,16 @@
     private List<ConversationSession> sessions = new();
     private string inputMessage = "";
     private string conversationId = "";
-    private AgentType currentAgent = AgentType.Manager;
-    private AgentType? activeAgent;
     private bool isLoading = false;
     private string streamingContent = "";
     private string currentStatus = "";
     private ElementReference messagesContainer;
 
-    // Display model for UI
     private class DisplayMessage
     {
         public string Content { get; set; } = "";
         public DateTime Timestamp { get; set; } = DateTime.UtcNow;
         public bool IsUser { get; set; }
-        public AgentType? AgentType { get; set; }
-        public bool IsDelegation { get; set; }
-        public AgentType? TargetAgent { get; set; }
-        public bool IsThinking { get; set; }
-        public bool IsSummary { get; set; }
         public List<string> ToolNames { get; set; } = new();
     }
 
@@ -203,12 +214,6 @@
         StateHasChanged();
     }
 
-    private void SelectAgent(AgentType agent)
-    {
-        currentAgent = agent;
-        activeAgent = agent;
-    }
-
     private async Task LoadSession(string sessionId)
     {
         conversationId = sessionId;
@@ -220,11 +225,6 @@
                 Content = m.Content,
                 Timestamp = m.Timestamp,
                 IsUser = m.Sender.Type == SenderType.User,
-                AgentType = m.Sender.AgentType,
-                IsDelegation = m.Type == MessageType.Delegation,
-                TargetAgent = m.TargetAgent,
-                IsThinking = m.Type == MessageType.AgentThinking,
-                IsSummary = m.Type == MessageType.Summary,
                 ToolNames = m.ToolCalls?.Select(t => t.Name).ToList() ?? new()
             }).ToList();
         }
@@ -258,10 +258,8 @@
         inputMessage = "";
         isLoading = true;
         streamingContent = "";
-        currentStatus = currentAgent == AgentType.Manager ? "Analyse..." : "Réflexion...";
-        activeAgent = currentAgent;
+        currentStatus = "Analyse en cours...";
 
-        // Add user message to display
         displayMessages.Add(new DisplayMessage
         {
             Content = userMessage,
@@ -274,30 +272,19 @@
 
         try
         {
-            await foreach (var evt in Orchestrator.StreamMessageAsync(userMessage, currentAgent, conversationId))
+            // Use Manager type which is mapped to NemesisAgent
+            await foreach (var evt in Orchestrator.StreamMessageAsync(userMessage, AgentType.Manager, conversationId))
             {
                 switch (evt.Type)
                 {
                     case AgentStreamEventType.AgentThinking:
                         currentStatus = evt.Content ?? "Réflexion...";
-                        activeAgent = evt.AgentType ?? currentAgent;
                         StateHasChanged();
                         break;
 
-                    case AgentStreamEventType.Delegation:
-                        currentStatus = $"→ {GetAgentDisplayName(evt.TargetAgent)}";
-                        activeAgent = evt.TargetAgent ?? currentAgent;
-
-                        displayMessages.Add(new DisplayMessage
-                        {
-                            Content = evt.Content ?? "Délégation...",
-                            AgentType = AgentType.Manager,
-                            IsDelegation = true,
-                            TargetAgent = evt.TargetAgent,
-                            Timestamp = DateTime.UtcNow
-                        });
+                    case AgentStreamEventType.ToolUse:
+                        currentStatus = $"Utilisation: {evt.Content}";
                         StateHasChanged();
-                        await ScrollToBottom();
                         break;
 
                     case AgentStreamEventType.TextDelta:
@@ -308,23 +295,8 @@
                         }
                         break;
 
-                    case AgentStreamEventType.AgentResponse:
-                        if (!string.IsNullOrEmpty(evt.Content))
-                        {
-                            displayMessages.Add(new DisplayMessage
-                            {
-                                Content = evt.Content,
-                                AgentType = evt.AgentType,
-                                Timestamp = DateTime.UtcNow
-                            });
-                            StateHasChanged();
-                            await ScrollToBottom();
-                        }
-                        break;
-
-                    case AgentStreamEventType.Synthesis:
-                        currentStatus = "Synthèse...";
-                        activeAgent = AgentType.Manager;
+                    case AgentStreamEventType.PatchGenerated:
+                        currentStatus = "Patch généré!";
                         StateHasChanged();
                         break;
 
@@ -333,14 +305,12 @@
                 }
             }
 
-            // Add final response
             if (!string.IsNullOrEmpty(streamingContent))
             {
                 displayMessages.Add(new DisplayMessage
                 {
                     Content = streamingContent,
-                    AgentType = currentAgent,
-                    IsSummary = currentAgent == AgentType.Manager,
+                    IsUser = false,
                     Timestamp = DateTime.UtcNow
                 });
             }
@@ -350,7 +320,8 @@
             LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Error, "Chat", $"Erreur: {ex.Message}");
             displayMessages.Add(new DisplayMessage
             {
-                Content = $"Erreur: {ex.Message}",
+                Content = $"❌ Erreur: {ex.Message}",
+                IsUser = false,
                 Timestamp = DateTime.UtcNow
             });
         }
@@ -361,6 +332,7 @@
             currentStatus = "";
             StateHasChanged();
             await ScrollToBottom();
+            await RefreshSessions();
         }
     }
 
@@ -369,41 +341,83 @@
         try { await JS.InvokeVoidAsync("scrollToBottom", messagesContainer); } catch { }
     }
 
-    private string GetAgentIcon(AgentType? t) => t switch
+    private string TruncateText(string text, int maxLength)
     {
-        AgentType.Manager => "👥",
-        AgentType.SeniorUnityCSharp => "💻",
-        AgentType.Generalist => "💡",
-        AgentType.Researcher => "🔍",
-        _ => "🤖"
-    };
+        if (string.IsNullOrEmpty(text)) return "Nouvelle conversation";
+        return text.Length <= maxLength ? text : text.Substring(0, maxLength) + "...";
+    }
 
-    private string GetAgentDisplayName(AgentType? t) => t switch
+    private string FormatDate(DateTime date)
     {
-        AgentType.Manager => "Manager",
-        AgentType.SeniorUnityCSharp => "Unity Expert",
-        AgentType.Generalist => "Generalist",
-        AgentType.Researcher => "Researcher",
-        _ => "Agent"
-    };
+        var now = DateTime.UtcNow;
+        var diff = now - date;
 
-    private string GetMessageCssClass(DisplayMessage msg)
-    {
-        var c = msg.IsUser ? "user" : "assistant";
-        if (msg.IsDelegation) c += " delegation";
-        if (msg.IsThinking) c += " thinking";
-        if (msg.IsSummary) c += " summary";
-        return c;
+        if (diff.TotalMinutes < 1) return "maintenant";
+        if (diff.TotalHours < 1) return $"{(int)diff.TotalMinutes}min";
+        if (diff.TotalDays < 1) return $"{(int)diff.TotalHours}h";
+        if (diff.TotalDays < 7) return $"{(int)diff.TotalDays}j";
+        return date.ToString("dd/MM");
     }
 
     private string FormatMessage(string content)
     {
         if (string.IsNullOrEmpty(content)) return "";
+
+        // Escape HTML first
         content = System.Web.HttpUtility.HtmlEncode(content);
-        content = System.Text.RegularExpressions.Regex.Replace(content, @"```(\w*)\n([\s\S]*?)```", "<pre><code>$2</code></pre>");
-        content = System.Text.RegularExpressions.Regex.Replace(content, @"`([^`]+)`", "<code>$1</code>");
-        content = System.Text.RegularExpressions.Regex.Replace(content, @"\*\*([^*]+)\*\*", "<strong>$1</strong>");
+
+        // Format code blocks with syntax highlighting classes
+        content = System.Text.RegularExpressions.Regex.Replace(
+            content,
+            @"```(\w*)\r?\n([\s\S]*?)```",
+            m => {
+                var lang = m.Groups[1].Value;
+                var code = m.Groups[2].Value.Trim();
+                var langClass = !string.IsNullOrEmpty(lang) ? $" language-{lang}" : "";
+                return $"<div class=\"code-block\"><div class=\"code-header\"><span class=\"code-lang\">{(string.IsNullOrEmpty(lang) ? "code" : lang)}</span><button class=\"copy-btn\" onclick=\"copyCode(this)\">Copier</button></div><pre><code class=\"{langClass}\">{code}</code></pre></div>";
+            });
+
+        // Inline code
+        content = System.Text.RegularExpressions.Regex.Replace(
+            content,
+            @"`([^`]+)`",
+            "<code class=\"inline-code\">$1</code>");
+
+        // Bold
+        content = System.Text.RegularExpressions.Regex.Replace(
+            content,
+            @"\*\*([^*]+)\*\*",
+            "<strong>$1</strong>");
+
+        // Italic
+        content = System.Text.RegularExpressions.Regex.Replace(
+            content,
+            @"\*([^*]+)\*",
+            "<em>$1</em>");
+
+        // Headers
+        content = System.Text.RegularExpressions.Regex.Replace(
+            content,
+            @"^### (.+)$",
+            "<h4>$1</h4>",
+            System.Text.RegularExpressions.RegexOptions.Multiline);
+
+        content = System.Text.RegularExpressions.Regex.Replace(
+            content,
+            @"^## (.+)$",
+            "<h3>$1</h3>",
+            System.Text.RegularExpressions.RegexOptions.Multiline);
+
+        // Lists
+        content = System.Text.RegularExpressions.Regex.Replace(
+            content,
+            @"^- (.+)$",
+            "<li>$1</li>",
+            System.Text.RegularExpressions.RegexOptions.Multiline);
+
+        // Newlines
         content = content.Replace("\n", "<br>");
+
         return content;
     }
 }
