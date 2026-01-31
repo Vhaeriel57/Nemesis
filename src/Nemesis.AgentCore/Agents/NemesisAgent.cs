@@ -27,71 +27,9 @@ public class NemesisAgent : BaseAgent
     public override string Name => "Nemesis";
     public override AgentType Type => AgentType.Manager;
 
-    public override string SystemPrompt => @"Tu es **Nemesis**, un assistant IA EXPERT en développement Unity.
-
-## RÈGLE ABSOLUE #1: TOUJOURS RECHERCHER AVANT DE RÉPONDRE
-Avant CHAQUE réponse sur le code, tu DOIS:
-1. Utiliser `code_index` pour chercher les classes/méthodes pertinentes
-2. Utiliser `file_system` pour LIRE les fichiers trouvés
-3. Analyser le code RÉEL du projet
-4. SEULEMENT ENSUITE répondre
-
-## RÈGLE ABSOLUE #2: QUAND L'UTILISATEUR DIT ""C'EST FAUX""
-Si l'utilisateur te corrige:
-1. Ne répète JAMAIS la même réponse
-2. Cherche avec des termes DIFFÉRENTS
-3. Lis PLUS de fichiers
-4. Admets ton erreur et corrige-toi
-
-## RÈGLE ABSOLUE #3: AGIR, PAS DÉCRIRE
-Quand on te demande de MODIFIER du code:
-1. NE PAS juste décrire ce que fait le code
-2. CRÉER le code modifié COMPLET
-3. TOUJOURS fournir un patch au format diff
-
-## Comment utiliser les outils
-
-### Recherche de code (OBLIGATOIRE)
-```json
-{""tool"": ""code_index"", ""action"": ""search"", ""query"": ""Door""}
-```
-
-### Lecture de fichier (OBLIGATOIRE après recherche)
-```json
-{""tool"": ""file_system"", ""action"": ""read_file"", ""path"": ""Assets/Scripts/Door.cs""}
-```
-
-### Recherche web (si besoin de doc Unity)
-```json
-{""tool"": ""web_search"", ""query"": ""Unity NetworkBehaviour synchronization""}
-```
-
-## Format de tes réponses
-
-### Pour les modifications de code
-```diff
---- a/Assets/Scripts/TasksHud.cs
-+++ b/Assets/Scripts/TasksHud.cs
-@@ -15,8 +15,9 @@ public class TasksHud : MonoBehaviour
-     text.text =
-     ""OBJECTIFS\n"" +
--    $""- Batterie : {(bat ? ""OK"" : ""0/1"")}\n"" +
--    $""- Moteur : {(eng ? ""OK"" : ""0/1"")}\n"" +
-+    $""- Huile moteur : {(oil ? ""OK"" : ""0/1"")}\n"" +
-```
-
-### Pour les nouveaux fichiers
-```csharp
-// Fichier: Assets/Scripts/NewFile.cs
-using UnityEngine;
-
-public class NewFile : MonoBehaviour
-{
-    // Code complet
-}
-```
-
-## Tu réponds TOUJOURS en français, de manière conversationnelle.";
+    public override string SystemPrompt => @"Tu es Nemesis, expert Unity/C#. RÉPONDS TOUJOURS EN FRANÇAIS.
+Quand on te demande de créer/modifier du code: fournis le code complet avec un patch diff.
+Utilise les outils pour rechercher dans le projet avant de répondre.";
 
     public override List<string> Capabilities => new()
     {
@@ -388,138 +326,77 @@ public class NewFile : MonoBehaviour
     private string BuildEnrichedPrompt(string userMessage, AgentContext context, Dictionary<string, string> searchResults)
     {
         var sb = new StringBuilder();
+        const int maxTotalLength = 3000; // Limite stricte pour éviter truncation
+        var currentLength = 0;
 
-        sb.AppendLine("## Message de l'utilisateur");
-        sb.AppendLine(userMessage);
+        // INSTRUCTION CRITIQUE EN PREMIER - toujours visible même si tronqué
+        sb.AppendLine("⚠️ RÉPONDS EN FRANÇAIS. Réponds DIRECTEMENT à la question posée.");
         sb.AppendLine();
 
-        // CONNAISSANCE COMPLÈTE DU PROJET (si disponible)
+        // Message utilisateur
+        sb.AppendLine("## QUESTION:");
+        sb.AppendLine(userMessage);
+        sb.AppendLine();
+        currentLength = sb.Length;
+
+        // Liste des classes pertinentes (COMPACT - pas le contenu complet)
         if (_projectKnowledge != null && _projectKnowledge.IsLoaded)
         {
-            sb.AppendLine("## 🗺️ CARTE COMPLÈTE DU PROJET");
-            sb.AppendLine(_projectKnowledge.GetProjectMap());
-            sb.AppendLine();
-
-            // Recherche intelligente dans la connaissance du projet
             var keywords = ExtractKeywords(userMessage);
             var projectSearchResults = new List<SearchResult>();
-            foreach (var keyword in keywords.Take(5))
+            foreach (var keyword in keywords.Take(3))
             {
                 projectSearchResults.AddRange(_projectKnowledge.Search(keyword));
             }
 
             if (projectSearchResults.Any())
             {
-                sb.AppendLine("## 🔍 Fichiers/Classes pertinents trouvés dans le projet");
-                foreach (var result in projectSearchResults.DistinctBy(r => r.FilePath).Take(15))
+                sb.AppendLine("## Classes/Fichiers trouvés:");
+                foreach (var result in projectSearchResults.DistinctBy(r => r.FilePath).Take(8))
                 {
-                    sb.AppendLine($"- **{result.Name}** ({result.Type}) → `{result.FilePath}`");
-                    sb.AppendLine($"  {result.Description}");
-
-                    // Lire le contenu du fichier si trouvé
-                    var fileContent = _projectKnowledge.GetFileContent(result.FilePath);
-                    if (!string.IsNullOrEmpty(fileContent) && !_fileCache.ContainsKey(result.FilePath))
+                    var line = $"- {result.Name} ({result.Type}): {result.FilePath}";
+                    if (currentLength + line.Length < maxTotalLength - 500)
                     {
-                        _fileCache[result.FilePath] = fileContent;
+                        sb.AppendLine(line);
+                        currentLength += line.Length;
                     }
                 }
                 sb.AppendLine();
 
-                // Inclure le contenu des fichiers les plus pertinents
-                sb.AppendLine("## 📄 Contenu des fichiers pertinents");
-                var filesToShow = projectSearchResults
-                    .DistinctBy(r => r.FilePath)
-                    .Take(5)
-                    .ToList();
-
-                foreach (var result in filesToShow)
+                // UN SEUL fichier le plus pertinent
+                var mostRelevant = projectSearchResults.FirstOrDefault();
+                if (mostRelevant != null && currentLength < maxTotalLength - 800)
                 {
-                    var content = _projectKnowledge.GetFileContent(result.FilePath);
+                    var content = _projectKnowledge.GetFileContent(mostRelevant.FilePath);
                     if (!string.IsNullOrEmpty(content))
                     {
-                        sb.AppendLine($"### `{result.Name}`");
+                        sb.AppendLine($"## Code de {mostRelevant.Name}:");
                         sb.AppendLine("```csharp");
-                        sb.AppendLine(TruncateText(content, 3000));
+                        sb.AppendLine(TruncateText(content, 800));
                         sb.AppendLine("```");
-                        sb.AppendLine();
                     }
                 }
             }
         }
-        // Contexte du projet (fallback si pas de ProjectKnowledge)
-        else if (!string.IsNullOrEmpty(context.ProjectPath))
-        {
-            sb.AppendLine($"## Projet: `{context.ProjectPath}`");
-            sb.AppendLine();
-        }
 
-        // Résultats de recherche automatique (outils)
-        if (searchResults.Any())
-        {
-            sb.AppendLine("## Recherches automatiques effectuées");
-            sb.AppendLine();
-
-            foreach (var kvp in searchResults)
-            {
-                if (kvp.Key.StartsWith("search_"))
-                {
-                    var keyword = kvp.Key.Substring(7);
-                    sb.AppendLine($"### Recherche: \"{keyword}\"");
-                    sb.AppendLine("```");
-                    sb.AppendLine(TruncateText(kvp.Value, 1000));
-                    sb.AppendLine("```");
-                    sb.AppendLine();
-                }
-            }
-
-            foreach (var kvp in searchResults)
-            {
-                if (kvp.Key.StartsWith("file_"))
-                {
-                    var fileName = kvp.Key.Substring(5);
-                    sb.AppendLine($"### Fichier lu: `{fileName}`");
-                    sb.AppendLine("```csharp");
-                    sb.AppendLine(TruncateText(kvp.Value, 2000));
-                    sb.AppendLine("```");
-                    sb.AppendLine();
-                }
-            }
-        }
-
-        // Fichiers du contexte
-        if (context.RelevantFiles.Any())
-        {
-            sb.AppendLine("## Fichiers pertinents du contexte");
-            foreach (var file in context.RelevantFiles.Take(5))
-            {
-                sb.AppendLine($"### `{Path.GetFileName(file.Key)}`");
-                sb.AppendLine("```csharp");
-                sb.AppendLine(TruncateText(file.Value, 1500));
-                sb.AppendLine("```");
-                sb.AppendLine();
-            }
-        }
-
-        // Instructions selon le type de demande
+        // Instructions finales
+        sb.AppendLine();
         if (IsModificationRequest(userMessage))
         {
-            sb.AppendLine("## INSTRUCTION: Modification demandée");
-            sb.AppendLine("Tu DOIS:");
-            sb.AppendLine("1. Analyser le code existant ci-dessus");
-            sb.AppendLine("2. Créer le code MODIFIÉ complet");
-            sb.AppendLine("3. Fournir un PATCH au format diff");
-            sb.AppendLine("4. NE PAS juste décrire le code");
+            sb.AppendLine("INSTRUCTION: Crée le code complet et fournis un patch diff.");
         }
-        else if (IsSearchRequest(userMessage))
+        else if (IsPlanningRequest(userMessage))
         {
-            sb.AppendLine("## INSTRUCTION: Recherche demandée");
-            sb.AppendLine("Si les résultats ci-dessus ne suffisent pas:");
-            sb.AppendLine("1. Utilise `code_index` avec d'autres termes");
-            sb.AppendLine("2. Lis les fichiers trouvés avec `file_system`");
-            sb.AppendLine("3. Cite TOUJOURS les fichiers que tu as trouvés");
+            sb.AppendLine("INSTRUCTION: Explique ton plan étape par étape AVANT de coder.");
         }
 
         return sb.ToString();
+    }
+
+    private bool IsPlanningRequest(string message)
+    {
+        var planKeywords = new[] { "que ferais", "comment faire", "explique", "plan", "étapes", "comptes faire" };
+        return planKeywords.Any(k => message.Contains(k, StringComparison.OrdinalIgnoreCase));
     }
 
     private bool IsModificationRequest(string message)
@@ -700,44 +577,88 @@ public class NewFile : MonoBehaviour
         AgentContext context,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        // Phase 1: Recherche automatique
+        // Phase 1: Analyse de la demande
         yield return new AgentStreamEvent
         {
             Type = AgentStreamEventType.AgentThinking,
-            Content = "🔍 Analyse de ta demande et extraction des mots-clés...",
+            Content = "💭 Je lis ta question...",
             AgentType = AgentType.Manager
         };
 
-        var keywords = ExtractKeywords(userMessage);
+        // Analyse du type de demande
+        var requestType = AnalyzeRequestType(userMessage);
+        yield return new AgentStreamEvent
+        {
+            Type = AgentStreamEventType.AgentThinking,
+            Content = $"🎯 Type de demande détecté: {requestType}",
+            AgentType = AgentType.Manager
+        };
 
+        // Phase 2: Extraction des mots-clés
+        var keywords = ExtractKeywords(userMessage);
         if (keywords.Any())
         {
             yield return new AgentStreamEvent
             {
                 Type = AgentStreamEventType.AgentThinking,
-                Content = $"🔎 Recherche automatique: {string.Join(", ", keywords.Take(5))}...",
+                Content = $"🔑 Mots-clés identifiés: {string.Join(", ", keywords)}",
                 AgentType = AgentType.Manager
             };
         }
 
-        var searchResults = await PerformAutomaticSearchAsync(keywords, context, cancellationToken);
+        // Phase 3: Réflexion sur la stratégie
+        yield return new AgentStreamEvent
+        {
+            Type = AgentStreamEventType.AgentThinking,
+            Content = GetStrategyThinking(userMessage, keywords),
+            AgentType = AgentType.Manager
+        };
 
+        // Phase 4: Recherche dans le projet
+        if (_projectKnowledge != null && _projectKnowledge.IsLoaded)
+        {
+            yield return new AgentStreamEvent
+            {
+                Type = AgentStreamEventType.AgentThinking,
+                Content = $"📚 Consultation de ma connaissance du projet ({_projectKnowledge.TotalClasses} classes)...",
+                AgentType = AgentType.Manager
+            };
+
+            var foundClasses = new List<string>();
+            foreach (var keyword in keywords.Take(3))
+            {
+                var results = _projectKnowledge.Search(keyword);
+                foundClasses.AddRange(results.Take(3).Select(r => r.Name));
+            }
+
+            if (foundClasses.Any())
+            {
+                yield return new AgentStreamEvent
+                {
+                    Type = AgentStreamEventType.AgentThinking,
+                    Content = $"✅ Classes pertinentes trouvées: {string.Join(", ", foundClasses.Distinct().Take(5))}",
+                    AgentType = AgentType.Manager
+                };
+            }
+        }
+
+        var searchResults = await PerformAutomaticSearchAsync(keywords, context, cancellationToken);
         if (searchResults.Any())
         {
             var fileCount = searchResults.Count(k => k.Key.StartsWith("file_"));
             yield return new AgentStreamEvent
             {
                 Type = AgentStreamEventType.AgentThinking,
-                Content = $"📂 {fileCount} fichier(s) trouvé(s) et lu(s) automatiquement",
+                Content = $"📂 {fileCount} fichier(s) lu(s) pour analyse",
                 AgentType = AgentType.Manager
             };
         }
 
-        // Phase 2: Construction du prompt
+        // Phase 5: Construction du prompt et appel LLM
         yield return new AgentStreamEvent
         {
             Type = AgentStreamEventType.AgentThinking,
-            Content = "🧠 Construction du contexte enrichi...",
+            Content = "🧠 Je formule ma réponse...",
             AgentType = AgentType.Manager
         };
 
@@ -745,22 +666,13 @@ public class NewFile : MonoBehaviour
         var messages = BuildMessagesList(context.ChatHistory, enrichedPrompt);
         var toolDefs = Tools.Values.Select(t => t.Definition).ToList();
 
-        // Phase 3: Appel LLM
-        yield return new AgentStreamEvent
-        {
-            Type = AgentStreamEventType.AgentThinking,
-            Content = "🤔 Réflexion et analyse...",
-            AgentType = AgentType.Manager
-        };
-
         var llmResponse = await LlmProvider.CompleteWithToolsAsync(
-            messages, toolDefs, SystemPrompt, 0.2, 8192, cancellationToken);
+            messages, toolDefs, SystemPrompt, 0.3, 4096, cancellationToken);
 
-        // Phase 4: Traitement des outils
+        // Phase 6: Traitement des outils
         var toolCall = ParseToolCall(llmResponse);
-        var toolCalls = new List<ToolCall>();
         var iterations = 0;
-        var maxIterations = 12;
+        var maxIterations = 8;
 
         while (toolCall != null && iterations < maxIterations)
         {
@@ -777,38 +689,34 @@ public class NewFile : MonoBehaviour
             var result = await ExecuteToolAsync(toolCall, context, cancellationToken);
             toolCall.Result = result.Success ? result.Output : result.Error;
             toolCall.IsComplete = true;
-            toolCalls.Add(toolCall);
 
             CacheToolResult(toolCall, result);
 
-            yield return new AgentStreamEvent
+            // Résumé du résultat
+            if (result.Success)
             {
-                Type = AgentStreamEventType.ToolCallComplete,
-                Content = toolCall.Name,
-                AgentType = AgentType.Manager
-            };
+                yield return new AgentStreamEvent
+                {
+                    Type = AgentStreamEventType.AgentThinking,
+                    Content = GetToolResultSummary(toolCall, result),
+                    AgentType = AgentType.Manager
+                };
+            }
 
             messages.Add(new ChatMessage { Role = "assistant", Content = llmResponse });
             messages.Add(new ChatMessage
             {
                 Role = "tool",
-                Content = $"Résultat de {toolCall.Name}:\n```\n{toolCall.Result}\n```\n\nAnalyse et continue."
+                Content = $"Résultat:\n{TruncateText(toolCall.Result ?? "", 500)}"
             });
 
-            yield return new AgentStreamEvent
-            {
-                Type = AgentStreamEventType.AgentThinking,
-                Content = "🤔 Analyse des résultats...",
-                AgentType = AgentType.Manager
-            };
-
             llmResponse = await LlmProvider.CompleteWithToolsAsync(
-                messages, toolDefs, SystemPrompt, 0.2, 8192, cancellationToken);
+                messages, toolDefs, SystemPrompt, 0.3, 4096, cancellationToken);
 
             toolCall = ParseToolCall(llmResponse);
         }
 
-        // Phase 5: Réponse finale
+        // Phase 7: Réponse finale
         var finalContent = CleanResponse(llmResponse);
 
         // Extraction des patches
@@ -829,7 +737,7 @@ public class NewFile : MonoBehaviour
         }
 
         // Streaming de la réponse
-        var chunkSize = 80;
+        var chunkSize = 100;
         for (int i = 0; i < finalContent.Length; i += chunkSize)
         {
             var chunk = finalContent.Substring(i, Math.Min(chunkSize, finalContent.Length - i));
@@ -838,10 +746,60 @@ public class NewFile : MonoBehaviour
                 Type = AgentStreamEventType.TextDelta,
                 Content = chunk
             };
-            await Task.Delay(3, cancellationToken);
+            await Task.Delay(2, cancellationToken);
         }
 
         yield return new AgentStreamEvent { Type = AgentStreamEventType.Complete };
+    }
+
+    private string AnalyzeRequestType(string message)
+    {
+        if (IsPlanningRequest(message))
+            return "Demande d'explication/planification";
+        if (IsModificationRequest(message))
+            return "Demande de création/modification de code";
+        if (IsSearchRequest(message))
+            return "Recherche d'information";
+        return "Question générale";
+    }
+
+    private string GetStrategyThinking(string userMessage, List<string> keywords)
+    {
+        var sb = new StringBuilder();
+        sb.Append("💡 Ma stratégie: ");
+
+        if (IsPlanningRequest(userMessage))
+        {
+            sb.Append("Analyser le contexte, identifier les classes existantes, puis expliquer le plan étape par étape");
+        }
+        else if (IsModificationRequest(userMessage))
+        {
+            sb.Append("Trouver les fichiers concernés, comprendre la structure, puis proposer le code");
+        }
+        else if (keywords.Any())
+        {
+            sb.Append($"Rechercher '{keywords.First()}' dans le projet et analyser le code trouvé");
+        }
+        else
+        {
+            sb.Append("Répondre directement à la question");
+        }
+
+        return sb.ToString();
+    }
+
+    private string GetToolResultSummary(ToolCall toolCall, ToolResult result)
+    {
+        if (toolCall.Name == "code_index")
+            return $"✓ Recherche terminée - {CountMatches(result.Output ?? "")} résultat(s)";
+        if (toolCall.Name == "file_system")
+            return $"✓ Fichier lu - {(result.Output?.Length ?? 0)} caractères";
+        return $"✓ {toolCall.Name} terminé";
+    }
+
+    private int CountMatches(string output)
+    {
+        return output.Split('\n').Count(l => l.Contains("→") || l.Contains(":"));
     }
 
     private string GetDetailedToolStatus(ToolCall toolCall)
