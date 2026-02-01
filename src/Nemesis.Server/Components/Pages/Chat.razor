@@ -2,11 +2,9 @@
 @using Nemesis.AgentCore.Orchestration
 @using Nemesis.AgentCore.Services
 @using Nemesis.AgentCore.Tools
-@using Nemesis.Shared.Models
 @inject AgentOrchestrator Orchestrator
 @inject ConversationService ConversationService
 @inject PatchTool PatchTool
-@inject PersistenceService Persistence
 @inject Nemesis.Server.Services.ProjectService ProjectService
 @inject Nemesis.Server.Services.LogService LogService
 @inject IJSRuntime JS
@@ -147,12 +145,15 @@
                             <span class="sender">Nemesis</span>
                         </div>
                         <div class="message-body">
-                            @if (thinkingSteps.Any())
+                            @if (thinkingHistory.Any())
                             {
-                                <div class="thinking-steps">
-                                    @foreach (var step in thinkingSteps)
+                                <div class="thinking-timeline">
+                                    @foreach (var thought in thinkingHistory)
                                     {
-                                        <div class="thinking-step">@step</div>
+                                        <div class="thinking-entry">
+                                            <span class="thinking-dot"></span>
+                                            <span class="thinking-text">@thought</span>
+                                        </div>
                                     }
                                 </div>
                             }
@@ -162,7 +163,7 @@
                                     @((MarkupString)FormatMessage(streamingContent))
                                 </div>
                             }
-                            else if (!thinkingSteps.Any())
+                            else
                             {
                                 <div class="typing-indicator">
                                     <span></span><span></span><span></span>
@@ -205,12 +206,10 @@
     private bool isLoading = false;
     private string streamingContent = "";
     private string currentStatus = "";
-    private List<string> thinkingSteps = new(); // Liste des étapes de réflexion
     private ElementReference messagesContainer;
     private ElementReference textareaRef;
     private AgentConversation? currentConversation;
     private List<string> currentToolCalls = new();
-    private ProjectState? currentProjectState;
 
     private class DisplayMessage
     {
@@ -220,35 +219,14 @@
         public List<string> ToolNames { get; set; } = new();
     }
 
+    private List<string> thinkingHistory = new();
+
     protected override async Task OnInitializedAsync()
     {
-        // Load persistent project state
-        if (ProjectService.IsProjectIndexed && !string.IsNullOrEmpty(ProjectService.CurrentProject?.Path))
-        {
-            currentProjectState = await Persistence.AddOrUpdateProjectAsync(
-                ProjectService.CurrentProject.Path,
-                ProjectService.CurrentProject.Name);
-
-            // Load persistent chat history
-            var persistedHistory = Persistence.GetChatHistory(currentProjectState.Id);
-            if (persistedHistory.Any())
-            {
-                displayMessages = persistedHistory.Select(m => new DisplayMessage
-                {
-                    Content = m.Content,
-                    IsUser = m.Role == "user",
-                    Timestamp = DateTime.UtcNow
-                }).ToList();
-            }
-        }
-
         await RefreshSessions();
 
-        // Create a new session if no history
-        if (!displayMessages.Any())
-        {
-            CreateNewConversation();
-        }
+        // Create a new session by default
+        CreateNewConversation();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -257,13 +235,15 @@
         {
             await JS.InvokeVoidAsync("initTextareaAutoResize", textareaRef);
         }
+        // Re-apply Prism.js syntax highlighting after every render
+        try { await JS.InvokeVoidAsync("highlightAllCode"); } catch { }
     }
 
     private void CreateNewConversation()
     {
         currentConversation = ConversationService.CreateConversation(
             "Nouvelle conversation",
-            ProjectService.CurrentProject?.Path);
+            ProjectService.CurrentProjectPath);
         conversationId = currentConversation.Id;
     }
 
@@ -306,7 +286,6 @@
         displayMessages.Clear();
         streamingContent = "";
         currentStatus = "";
-        thinkingSteps.Clear();
         currentToolCalls.Clear();
 
         await RefreshSessions();
@@ -331,8 +310,8 @@
         isLoading = true;
         streamingContent = "";
         currentStatus = "";
-        thinkingSteps.Clear();
         currentToolCalls.Clear();
+        thinkingHistory.Clear();
 
         // Add user message to display
         displayMessages.Add(new DisplayMessage
@@ -354,19 +333,9 @@
         ConversationService.AddMessage(conversationId, new AgentMessage
         {
             Content = userMessage,
-            Sender = new MessageSender { Type = SenderType.User },
+            Sender = new MessageSender { Type = SenderType.User, Name = "User" },
             Timestamp = DateTime.UtcNow
         });
-
-        // Save to persistent storage
-        if (currentProjectState != null)
-        {
-            await Persistence.AddChatMessageAsync(currentProjectState.Id, new ChatMessage
-            {
-                Role = "user",
-                Content = userMessage
-            });
-        }
 
         StateHasChanged();
         await ScrollToBottom();
@@ -379,18 +348,17 @@
                 switch (evt.Type)
                 {
                     case AgentStreamEventType.AgentThinking:
-                        var thinkingContent = evt.Content ?? "🤔 Réflexion...";
-                        thinkingSteps.Add(thinkingContent);
-                        currentStatus = thinkingContent;
+                        if (!string.IsNullOrWhiteSpace(evt.Content))
+                        {
+                            thinkingHistory.Add(evt.Content);
+                            currentStatus = evt.Content;
+                        }
                         StateHasChanged();
                         break;
 
                     case AgentStreamEventType.ToolCallComplete:
                         var toolName = evt.Content ?? "outil";
                         currentToolCalls.Add(toolName);
-                        var toolStatus = GetToolStatusMessage(toolName);
-                        thinkingSteps.Add(toolStatus);
-                        currentStatus = toolStatus;
                         StateHasChanged();
                         break;
 
@@ -424,29 +392,10 @@
                 ConversationService.AddMessage(conversationId, new AgentMessage
                 {
                     Content = streamingContent,
-                    Sender = new MessageSender { Type = SenderType.Agent, AgentType = AgentType.Manager },
+                    Sender = new MessageSender { Type = SenderType.Agent, Name = "Nemesis" },
                     Timestamp = DateTime.UtcNow,
                     ToolCalls = currentToolCalls.Select(t => new ToolCall { Name = t }).ToList()
                 });
-
-                // Save to persistent storage
-                if (currentProjectState != null)
-                {
-                    await Persistence.AddChatMessageAsync(currentProjectState.Id, new ChatMessage
-                    {
-                        Role = "assistant",
-                        Content = streamingContent
-                    });
-
-                    // Record learning if it contains useful patterns
-                    if (streamingContent.Contains("```") && streamingContent.Length > 500)
-                    {
-                        await Persistence.RecordLearningAsync(
-                            "Code généré: " + userMessage.Substring(0, Math.Min(50, userMessage.Length)),
-                            streamingContent.Substring(0, Math.Min(500, streamingContent.Length)),
-                            new List<string> { "code", "génération" });
-                    }
-                }
             }
         }
         catch (Exception ex)
@@ -458,23 +407,14 @@
                 IsUser = false,
                 Timestamp = DateTime.UtcNow
             });
-
-            // Record error for learning
-            if (currentProjectState != null)
-            {
-                await Persistence.RecordErrorAndCorrectionAsync(
-                    ex.Message,
-                    "Erreur lors de la génération de réponse",
-                    userMessage);
-            }
         }
         finally
         {
             isLoading = false;
             streamingContent = "";
             currentStatus = "";
-            thinkingSteps.Clear();
             currentToolCalls.Clear();
+            thinkingHistory.Clear();
 
             // Save conversation after each exchange
             if (currentConversation != null)
@@ -527,59 +467,61 @@
     {
         if (string.IsNullOrEmpty(content)) return "";
 
-        // Escape HTML first
-        content = System.Web.HttpUtility.HtmlEncode(content);
-
-        // Format code blocks with syntax highlighting classes
+        // Step 1: Extract code blocks BEFORE HTML encoding to preserve them
+        var codeBlocks = new List<string>();
         content = System.Text.RegularExpressions.Regex.Replace(
             content,
             @"```(\w*)\r?\n([\s\S]*?)```",
             m => {
                 var lang = m.Groups[1].Value;
                 var code = m.Groups[2].Value.Trim();
+                // HTML-encode the code content separately
+                var encodedCode = System.Web.HttpUtility.HtmlEncode(code);
                 var langClass = !string.IsNullOrEmpty(lang) ? $"language-{lang}" : "language-csharp";
-                return $"<div class=\"code-block\"><div class=\"code-header\"><span class=\"code-lang\">{(string.IsNullOrEmpty(lang) ? "code" : lang)}</span><button class=\"copy-btn\" onclick=\"copyCode(this)\">Copier</button></div><pre><code class=\"{langClass}\">{code}</code></pre></div>";
+                var langLabel = string.IsNullOrEmpty(lang) ? "code" : lang.ToUpper();
+                var block = $"<div class=\"code-block\"><div class=\"code-header\"><span class=\"code-lang\">{langLabel}</span><button class=\"copy-btn\" onclick=\"copyCode(this)\">Copier</button></div><pre class=\"line-numbers\"><code class=\"{langClass}\">{encodedCode}</code></pre></div>";
+                var placeholder = $"%%CODEBLOCK_{codeBlocks.Count}%%";
+                codeBlocks.Add(block);
+                return placeholder;
             });
 
-        // Inline code
+        // Step 2: Extract inline code before encoding
+        var inlineBlocks = new List<string>();
         content = System.Text.RegularExpressions.Regex.Replace(
             content,
             @"`([^`]+)`",
-            "<code class=\"inline-code\">$1</code>");
+            m => {
+                var code = System.Web.HttpUtility.HtmlEncode(m.Groups[1].Value);
+                var placeholder = $"%%INLINE_{inlineBlocks.Count}%%";
+                inlineBlocks.Add($"<code class=\"inline-code\">{code}</code>");
+                return placeholder;
+            });
 
-        // Bold
-        content = System.Text.RegularExpressions.Regex.Replace(
-            content,
-            @"\*\*([^*]+)\*\*",
-            "<strong>$1</strong>");
+        // Step 3: Now HTML-encode the rest
+        content = System.Web.HttpUtility.HtmlEncode(content);
 
-        // Italic
-        content = System.Text.RegularExpressions.Regex.Replace(
-            content,
-            @"\*([^*]+)\*",
-            "<em>$1</em>");
+        // Step 4: Restore code blocks (they were already encoded internally)
+        for (int i = 0; i < codeBlocks.Count; i++)
+            content = content.Replace($"%%CODEBLOCK_{i}%%", codeBlocks[i]);
+        for (int i = 0; i < inlineBlocks.Count; i++)
+            content = content.Replace($"%%INLINE_{i}%%", inlineBlocks[i]);
 
-        // Headers
+        // Step 5: Format markdown (bold, italic, headers, lists)
         content = System.Text.RegularExpressions.Regex.Replace(
-            content,
-            @"^### (.+)$",
-            "<h4>$1</h4>",
+            content, @"\*\*([^*]+)\*\*", "<strong>$1</strong>");
+        content = System.Text.RegularExpressions.Regex.Replace(
+            content, @"\*([^*]+)\*", "<em>$1</em>");
+        content = System.Text.RegularExpressions.Regex.Replace(
+            content, @"^### (.+)$", "<h4>$1</h4>",
+            System.Text.RegularExpressions.RegexOptions.Multiline);
+        content = System.Text.RegularExpressions.Regex.Replace(
+            content, @"^## (.+)$", "<h3>$1</h3>",
+            System.Text.RegularExpressions.RegexOptions.Multiline);
+        content = System.Text.RegularExpressions.Regex.Replace(
+            content, @"^- (.+)$", "<li>$1</li>",
             System.Text.RegularExpressions.RegexOptions.Multiline);
 
-        content = System.Text.RegularExpressions.Regex.Replace(
-            content,
-            @"^## (.+)$",
-            "<h3>$1</h3>",
-            System.Text.RegularExpressions.RegexOptions.Multiline);
-
-        // Lists
-        content = System.Text.RegularExpressions.Regex.Replace(
-            content,
-            @"^- (.+)$",
-            "<li>$1</li>",
-            System.Text.RegularExpressions.RegexOptions.Multiline);
-
-        // Newlines
+        // Step 6: Newlines to <br> (but not inside code blocks)
         content = content.Replace("\n", "<br>");
 
         return content;

@@ -50,6 +50,7 @@ public class PatchTool : ITool, IPatchService
     };
 
     private readonly Dictionary<string, FilePatch> _pendingPatches = new();
+    private readonly List<FilePatch> _appliedPatchesHistory = new();
 
     public PatchTool(string? backupPath = null, bool autoBackup = true)
     {
@@ -220,11 +221,6 @@ public class PatchTool : ITool, IPatchService
 
         var success = await ApplyPatchAsync(patch, _autoBackup, cancellationToken);
 
-        if (success)
-        {
-            _pendingPatches.Remove(patchId);
-        }
-
         return new ToolResult
         {
             Success = success,
@@ -306,6 +302,34 @@ public class PatchTool : ITool, IPatchService
     {
         try
         {
+            // Ensure we have valid file path
+            if (string.IsNullOrEmpty(patch.FilePath) || !File.Exists(patch.FilePath))
+            {
+                patch.Status = PatchStatus.Failed;
+                patch.ErrorMessage = $"File not found: {patch.FilePath}";
+                return false;
+            }
+
+            // Read original content if missing
+            if (string.IsNullOrEmpty(patch.OriginalContent))
+            {
+                patch.OriginalContent = await File.ReadAllTextAsync(patch.FilePath, cancellationToken);
+            }
+
+            // If ModifiedContent is empty but we have a UnifiedDiff, reconstruct it
+            if (string.IsNullOrEmpty(patch.ModifiedContent) && !string.IsNullOrEmpty(patch.UnifiedDiff))
+            {
+                patch.ModifiedContent = ApplyUnifiedDiff(patch.OriginalContent, patch.UnifiedDiff);
+            }
+
+            // Still empty? Nothing to apply
+            if (string.IsNullOrEmpty(patch.ModifiedContent))
+            {
+                patch.Status = PatchStatus.Failed;
+                patch.ErrorMessage = "No modified content and could not reconstruct from diff";
+                return false;
+            }
+
             if (createBackup)
             {
                 patch.BackupPath = await CreateBackupAsync(patch.FilePath, cancellationToken);
@@ -313,6 +337,10 @@ public class PatchTool : ITool, IPatchService
 
             await File.WriteAllTextAsync(patch.FilePath, patch.ModifiedContent, cancellationToken);
             patch.Status = PatchStatus.Applied;
+
+            // Add to applied history
+            _appliedPatchesHistory.Add(patch);
+
             return true;
         }
         catch (Exception ex)
@@ -321,6 +349,78 @@ public class PatchTool : ITool, IPatchService
             patch.ErrorMessage = ex.Message;
             return false;
         }
+    }
+
+    /// <summary>
+    /// Reconstructs the modified content by applying a unified diff to the original content.
+    /// </summary>
+    private string ApplyUnifiedDiff(string originalContent, string unifiedDiff)
+    {
+        var originalLines = originalContent.Split('\n').ToList();
+        var diffLines = unifiedDiff.Split('\n');
+
+        // Parse the hunks from the diff and apply them in reverse order
+        // to preserve line numbers
+        var hunks = new List<(int startLine, List<string> removedLines, List<string> addedLines)>();
+
+        int? currentHunkStart = null;
+        var currentRemoved = new List<string>();
+        var currentAdded = new List<string>();
+
+        foreach (var line in diffLines)
+        {
+            // Parse hunk header: @@ -startOrig,count +startMod,count @@
+            if (line.StartsWith("@@"))
+            {
+                // Save previous hunk
+                if (currentHunkStart.HasValue)
+                {
+                    hunks.Add((currentHunkStart.Value, new List<string>(currentRemoved), new List<string>(currentAdded)));
+                }
+
+                var match = System.Text.RegularExpressions.Regex.Match(line, @"@@ -(\d+)");
+                currentHunkStart = match.Success ? int.Parse(match.Groups[1].Value) : null;
+                currentRemoved.Clear();
+                currentAdded.Clear();
+            }
+            else if (line.StartsWith("-") && !line.StartsWith("---"))
+            {
+                currentRemoved.Add(line.Substring(1));
+            }
+            else if (line.StartsWith("+") && !line.StartsWith("+++"))
+            {
+                currentAdded.Add(line.Substring(1));
+            }
+        }
+
+        // Save last hunk
+        if (currentHunkStart.HasValue)
+        {
+            hunks.Add((currentHunkStart.Value, new List<string>(currentRemoved), new List<string>(currentAdded)));
+        }
+
+        // Apply hunks in reverse order to preserve line numbers
+        hunks.Reverse();
+        foreach (var (startLine, removedLines, addedLines) in hunks)
+        {
+            var index = startLine - 1; // 0-based
+
+            // Remove the old lines
+            if (removedLines.Count > 0 && index < originalLines.Count)
+            {
+                var removeCount = Math.Min(removedLines.Count, originalLines.Count - index);
+                originalLines.RemoveRange(index, removeCount);
+            }
+
+            // Insert the new lines
+            if (addedLines.Count > 0)
+            {
+                var insertIndex = Math.Min(index, originalLines.Count);
+                originalLines.InsertRange(insertIndex, addedLines);
+            }
+        }
+
+        return string.Join("\n", originalLines);
     }
 
     public async Task<bool> ApplyPatchSetAsync(
@@ -612,6 +712,12 @@ public class PatchTool : ITool, IPatchService
 
     public void RemovePendingPatch(string id) =>
         _pendingPatches.Remove(id);
+
+    public IEnumerable<FilePatch> GetAppliedPatchesHistory() =>
+        _appliedPatchesHistory;
+
+    public FilePatch? GetAppliedPatch(string id) =>
+        _appliedPatchesHistory.FirstOrDefault(p => p.Id == id);
 }
 
 internal static class FileExtensions

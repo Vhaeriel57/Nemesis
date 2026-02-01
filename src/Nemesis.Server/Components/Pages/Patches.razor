@@ -89,17 +89,33 @@
         }
         else
         {
-            @foreach (var patch in appliedPatches.TakeLast(10).Reverse())
+            @foreach (var patch in appliedPatches.AsEnumerable().Reverse().Take(20))
             {
                 <div class="patch-card applied">
                     <div class="patch-header">
                         <span class="patch-file">@Path.GetFileName(patch.FilePath)</span>
-                        <span class="patch-status applied">Applied</span>
+                        <span class="patch-status @(patch.Status == PatchStatus.RolledBack ? "rolledback" : "applied")">
+                            @(patch.Status == PatchStatus.RolledBack ? "Rolled Back" : "Applied")
+                        </span>
                     </div>
                     <div class="patch-path">@patch.FilePath</div>
                     @if (!string.IsNullOrEmpty(patch.BackupPath))
                     {
                         <div class="patch-backup">Backup: @patch.BackupPath</div>
+                    }
+
+                    <details class="patch-diff">
+                        <summary>View Diff</summary>
+                        <pre class="diff-content">@patch.UnifiedDiff</pre>
+                    </details>
+
+                    @if (patch.Status == PatchStatus.Applied)
+                    {
+                        <div class="patch-actions">
+                            <button class="btn btn-warning" @onclick="() => RollbackAppliedPatch(patch.Id)">
+                                ↩ Revert
+                            </button>
+                        </div>
                     }
                 </div>
             }
@@ -122,9 +138,10 @@
 
     private void RefreshPatches()
     {
-        var all = PatchTool.GetAllPendingPatches().ToList();
-        pendingPatches = all.Where(p => p.Status == PatchStatus.Pending).ToList();
-        appliedPatches = all.Where(p => p.Status == PatchStatus.Applied).ToList();
+        pendingPatches = PatchTool.GetAllPendingPatches()
+            .Where(p => p.Status == PatchStatus.Pending)
+            .ToList();
+        appliedPatches = PatchTool.GetAppliedPatchesHistory().ToList();
     }
 
     private async Task ApplyPatch(string patchId)
@@ -167,6 +184,27 @@
         if (success)
         {
             LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Info, "Patch", $"Patch rolled back: {patch.FilePath}");
+        }
+
+        RefreshPatches();
+        StateHasChanged();
+    }
+
+    private async Task RollbackAppliedPatch(string patchId)
+    {
+        var patch = PatchTool.GetAppliedPatch(patchId);
+        if (patch == null)
+            return;
+
+        var success = await PatchTool.RollbackPatchAsync(patch);
+
+        if (success)
+        {
+            LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Info, "Patch", $"Applied patch reverted: {patch.FilePath}");
+        }
+        else
+        {
+            LogService.AddLog(Nemesis.Shared.DTOs.LogLevel.Error, "Patch", $"Revert failed: {patch.ErrorMessage}");
         }
 
         RefreshPatches();
