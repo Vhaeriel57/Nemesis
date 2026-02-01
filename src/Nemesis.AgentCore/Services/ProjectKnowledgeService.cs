@@ -21,6 +21,7 @@ public class ProjectKnowledgeService
     private readonly Dictionary<string, ClassInfo> _allClasses = new();
     private readonly Dictionary<string, List<string>> _classRelations = new(); // class -> classes it references
     private readonly Dictionary<string, List<string>> _filesByFolder = new();
+    private readonly Dictionary<string, FileMap> _fileMaps = new(); // Cartes détaillées de chaque fichier
     private string _projectSummary = "";
     private bool _isLoaded = false;
 
@@ -45,6 +46,7 @@ public class ProjectKnowledgeService
         _allClasses.Clear();
         _classRelations.Clear();
         _filesByFolder.Clear();
+        _fileMaps.Clear();
 
         _logger.LogInformation("Chargement complet du projet: {Path}", projectPath);
 
@@ -89,6 +91,7 @@ public class ProjectKnowledgeService
     private async Task LoadFileAsync(string filePath, string projectPath)
     {
         var content = await File.ReadAllTextAsync(filePath);
+        var lines = content.Split('\n');
         var relativePath = GetRelativePath(filePath, projectPath);
         var folder = Path.GetDirectoryName(relativePath) ?? "";
 
@@ -101,8 +104,12 @@ public class ProjectKnowledgeService
             Folder = folder
         };
 
-        // Extraire les informations de classe
-        ExtractClassInfo(projectFile, content);
+        // Créer la carte du fichier avec les numéros de ligne
+        var fileMap = BuildFileMap(filePath, relativePath, lines);
+        _fileMaps[relativePath] = fileMap;
+
+        // Extraire les informations de classe (mise à jour avec lignes)
+        ExtractClassInfoWithLines(projectFile, lines, fileMap);
 
         _allFiles[relativePath] = projectFile;
 
@@ -112,83 +119,270 @@ public class ProjectKnowledgeService
         _filesByFolder[folder].Add(relativePath);
     }
 
-    private void ExtractClassInfo(ProjectFile file, string content)
+    /// <summary>
+    /// Construit une carte détaillée du fichier avec tous les chunks et leurs lignes
+    /// </summary>
+    private FileMap BuildFileMap(string fullPath, string relativePath, string[] lines)
     {
-        // Pattern pour les classes, structs, interfaces, enums
-        var classPattern = @"(?:public|private|protected|internal)?\s*(?:partial\s+)?(?:abstract\s+)?(?:sealed\s+)?(?:static\s+)?(class|struct|interface|enum)\s+(\w+)(?:\s*:\s*([^{]+))?";
-
-        foreach (Match match in Regex.Matches(content, classPattern))
+        var fileMap = new FileMap
         {
-            var kind = match.Groups[1].Value;
-            var className = match.Groups[2].Value;
-            var inheritance = match.Groups[3].Value.Trim();
+            FilePath = relativePath,
+            FileName = Path.GetFileName(fullPath),
+            TotalLines = lines.Length
+        };
 
-            var classInfo = new ClassInfo
+        // Extraire les usings
+        for (int i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i].Trim();
+            if (line.StartsWith("using ") && line.EndsWith(";"))
             {
-                Name = className,
-                Kind = kind,
-                FilePath = file.RelativePath,
-                BaseClasses = ParseInheritance(inheritance),
-                Methods = ExtractMethods(content, className),
-                Properties = ExtractProperties(content, className),
-                Fields = ExtractFields(content, className)
-            };
-
-            // Déterminer le type Unity
-            classInfo.IsMonoBehaviour = classInfo.BaseClasses.Any(b =>
-                b.Contains("MonoBehaviour") || b.Contains("NetworkBehaviour"));
-            classInfo.IsScriptableObject = classInfo.BaseClasses.Any(b =>
-                b.Contains("ScriptableObject"));
-
-            _allClasses[className] = classInfo;
-            file.Classes.Add(classInfo);
+                var usingNs = line.Substring(6, line.Length - 7).Trim();
+                fileMap.Usings.Add(usingNs);
+            }
+            else if (line.StartsWith("namespace "))
+            {
+                var ns = ExtractNamespace(line);
+                if (!string.IsNullOrEmpty(ns))
+                    fileMap.Namespaces.Add(ns);
+            }
         }
 
-        // Extraire les usings pour les dépendances
-        var usingPattern = @"using\s+([\w.]+);";
-        foreach (Match match in Regex.Matches(content, usingPattern))
+        // Parser les types (classes, structs, interfaces, enums) avec leurs membres
+        ParseTypesWithLineNumbers(lines, relativePath, fileMap);
+
+        return fileMap;
+    }
+
+    private string ExtractNamespace(string line)
+    {
+        var match = Regex.Match(line, @"namespace\s+([\w.]+)");
+        return match.Success ? match.Groups[1].Value : "";
+    }
+
+    /// <summary>
+    /// Parse les types et leurs membres avec les numéros de ligne exacts
+    /// </summary>
+    private void ParseTypesWithLineNumbers(string[] lines, string filePath, FileMap fileMap)
+    {
+        var typePattern = @"^\s*(?:public|private|protected|internal)?\s*(?:partial\s+)?(?:abstract\s+)?(?:sealed\s+)?(?:static\s+)?(class|struct|interface|enum)\s+(\w+)";
+        var methodPattern = @"^\s*(?:\[[^\]]+\]\s*)*(?:public|private|protected|internal)?\s*(?:static\s+)?(?:virtual\s+)?(?:override\s+)?(?:async\s+)?(?:[\w<>\[\],\?\s]+)\s+(\w+)\s*\(([^)]*)\)\s*(?:where\s+[^{]+)?";
+
+        int braceDepth = 0;
+        CodeChunk? currentType = null;
+        int typeStartBrace = 0;
+
+        for (int i = 0; i < lines.Length; i++)
         {
-            file.Usings.Add(match.Groups[1].Value);
+            var line = lines[i];
+            var lineNumber = i + 1; // Les lignes commencent à 1
+
+            // Chercher un nouveau type
+            var typeMatch = Regex.Match(line, typePattern);
+            if (typeMatch.Success && currentType == null)
+            {
+                var kind = typeMatch.Groups[1].Value;
+                var name = typeMatch.Groups[2].Value;
+
+                currentType = new CodeChunk
+                {
+                    Name = name,
+                    Type = kind switch
+                    {
+                        "class" => CodeChunkType.Class,
+                        "struct" => CodeChunkType.Struct,
+                        "interface" => CodeChunkType.Interface,
+                        "enum" => CodeChunkType.Enum,
+                        _ => CodeChunkType.Class
+                    },
+                    FilePath = filePath,
+                    StartLine = lineNumber,
+                    Signature = line.Trim()
+                };
+
+                // Compter les accolades pour trouver la fin
+                braceDepth = 0;
+                typeStartBrace = -1;
+            }
+
+            // Compter les accolades
+            foreach (char c in line)
+            {
+                if (c == '{')
+                {
+                    if (currentType != null && typeStartBrace == -1)
+                    {
+                        typeStartBrace = braceDepth;
+                    }
+                    braceDepth++;
+                }
+                else if (c == '}')
+                {
+                    braceDepth--;
+                    if (currentType != null && braceDepth == typeStartBrace)
+                    {
+                        // Fin du type actuel
+                        currentType.EndLine = lineNumber;
+                        currentType.Content = string.Join("\n", lines.Skip(currentType.StartLine - 1).Take(currentType.LineCount));
+
+                        // Parser les méthodes dans ce type
+                        ParseMethodsInType(lines, currentType);
+
+                        fileMap.Chunks.Add(currentType);
+                        currentType = null;
+                        typeStartBrace = -1;
+                    }
+                }
+            }
         }
     }
 
-    private List<string> ParseInheritance(string inheritance)
+    /// <summary>
+    /// Parse les méthodes à l'intérieur d'un type
+    /// </summary>
+    private void ParseMethodsInType(string[] lines, CodeChunk typeChunk)
     {
-        if (string.IsNullOrWhiteSpace(inheritance))
+        var methodPattern = @"^\s*(?:\[[^\]]+\]\s*)*(?:public|private|protected|internal)?\s*(?:static\s+)?(?:virtual\s+)?(?:override\s+)?(?:async\s+)?([\w<>\[\],\?\s]+)\s+(\w+)\s*\(([^)]*)\)";
+
+        int braceDepth = 0;
+        CodeChunk? currentMethod = null;
+        int methodStartBrace = -1;
+        bool inType = false;
+
+        for (int i = typeChunk.StartLine - 1; i < typeChunk.EndLine && i < lines.Length; i++)
+        {
+            var line = lines[i];
+            var lineNumber = i + 1;
+
+            // Ignorer les lignes avant l'accolade ouvrante du type
+            if (!inType)
+            {
+                if (line.Contains("{"))
+                    inType = true;
+                continue;
+            }
+
+            // Chercher une méthode (seulement si on n'est pas déjà dans une méthode)
+            if (currentMethod == null)
+            {
+                var methodMatch = Regex.Match(line, methodPattern);
+                if (methodMatch.Success)
+                {
+                    var returnType = methodMatch.Groups[1].Value.Trim();
+                    var methodName = methodMatch.Groups[2].Value;
+                    var parameters = methodMatch.Groups[3].Value;
+
+                    // Ignorer les mots-clés et constructeurs
+                    if (methodName != "if" && methodName != "while" && methodName != "for" &&
+                        methodName != "switch" && methodName != "catch" && methodName != "using" &&
+                        methodName != typeChunk.Name) // pas le constructeur
+                    {
+                        currentMethod = new CodeChunk
+                        {
+                            Name = methodName,
+                            Type = CodeChunkType.Method,
+                            FilePath = typeChunk.FilePath,
+                            StartLine = lineNumber,
+                            Signature = $"{returnType} {methodName}({parameters})",
+                            ParentName = typeChunk.Name
+                        };
+                        methodStartBrace = -1;
+                    }
+                }
+            }
+
+            // Compter les accolades pour les méthodes
+            if (currentMethod != null)
+            {
+                foreach (char c in line)
+                {
+                    if (c == '{')
+                    {
+                        if (methodStartBrace == -1)
+                            methodStartBrace = braceDepth;
+                        braceDepth++;
+                    }
+                    else if (c == '}')
+                    {
+                        braceDepth--;
+                        if (braceDepth == methodStartBrace)
+                        {
+                            currentMethod.EndLine = lineNumber;
+                            currentMethod.Content = string.Join("\n", lines.Skip(currentMethod.StartLine - 1).Take(currentMethod.LineCount));
+                            typeChunk.Children.Add(currentMethod);
+                            currentMethod = null;
+                            methodStartBrace = -1;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                // Juste compter les accolades
+                foreach (char c in line)
+                {
+                    if (c == '{') braceDepth++;
+                    else if (c == '}') braceDepth--;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Version mise à jour de ExtractClassInfo qui utilise les données de FileMap
+    /// </summary>
+    private void ExtractClassInfoWithLines(ProjectFile file, string[] lines, FileMap fileMap)
+    {
+        foreach (var chunk in fileMap.Chunks)
+        {
+            if (chunk.Type == CodeChunkType.Class || chunk.Type == CodeChunkType.Struct ||
+                chunk.Type == CodeChunkType.Interface || chunk.Type == CodeChunkType.Enum)
+            {
+                var classInfo = new ClassInfo
+                {
+                    Name = chunk.Name,
+                    Kind = chunk.Type.ToString().ToLower(),
+                    FilePath = file.RelativePath,
+                    StartLine = chunk.StartLine,
+                    EndLine = chunk.EndLine,
+                    BaseClasses = ExtractBaseClasses(chunk.Signature),
+                    Methods = chunk.Children
+                        .Where(c => c.Type == CodeChunkType.Method)
+                        .Select(c => new MethodInfo
+                        {
+                            Name = c.Name,
+                            Signature = c.Signature,
+                            StartLine = c.StartLine,
+                            EndLine = c.EndLine,
+                            IsUnityCallback = IsUnityCallback(c.Name)
+                        }).ToList()
+                };
+
+                // Détecter MonoBehaviour et ScriptableObject
+                classInfo.IsMonoBehaviour = classInfo.BaseClasses.Any(b =>
+                    b.Contains("MonoBehaviour") || b.Contains("NetworkBehaviour"));
+                classInfo.IsScriptableObject = classInfo.BaseClasses.Any(b =>
+                    b.Contains("ScriptableObject"));
+
+                _allClasses[chunk.Name] = classInfo;
+                file.Classes.Add(classInfo);
+            }
+        }
+
+        // Extraire les usings
+        file.Usings = fileMap.Usings;
+    }
+
+    private List<string> ExtractBaseClasses(string signature)
+    {
+        var match = Regex.Match(signature, @":\s*([^{]+)");
+        if (!match.Success)
             return new List<string>();
 
-        return inheritance.Split(',')
+        return match.Groups[1].Value.Split(',')
             .Select(s => s.Trim())
             .Where(s => !string.IsNullOrEmpty(s))
             .ToList();
-    }
-
-    private List<MethodInfo> ExtractMethods(string content, string className)
-    {
-        var methods = new List<MethodInfo>();
-
-        // Pattern simplifié pour les méthodes
-        var methodPattern = @"(?:public|private|protected|internal)?\s*(?:static\s+)?(?:virtual\s+)?(?:override\s+)?(?:async\s+)?(?:[\w<>\[\],\s]+)\s+(\w+)\s*\(([^)]*)\)";
-
-        foreach (Match match in Regex.Matches(content, methodPattern))
-        {
-            var methodName = match.Groups[1].Value;
-            var parameters = match.Groups[2].Value;
-
-            // Ignorer les constructeurs et mots-clés
-            if (methodName == className || methodName == "if" || methodName == "while" ||
-                methodName == "for" || methodName == "switch" || methodName == "catch")
-                continue;
-
-            methods.Add(new MethodInfo
-            {
-                Name = methodName,
-                Parameters = parameters,
-                IsUnityCallback = IsUnityCallback(methodName)
-            });
-        }
-
-        return methods.DistinctBy(m => m.Name + m.Parameters).ToList();
     }
 
     private bool IsUnityCallback(string methodName)
@@ -197,32 +391,6 @@ public class ProjectKnowledgeService
             "OnEnable", "OnDisable", "OnDestroy", "OnTriggerEnter", "OnTriggerExit",
             "OnCollisionEnter", "OnCollisionExit", "OnGUI", "OnDrawGizmos" };
         return unityCallbacks.Contains(methodName);
-    }
-
-    private List<string> ExtractProperties(string content, string className)
-    {
-        var props = new List<string>();
-        var propPattern = @"(?:public|private|protected)\s+(?:static\s+)?(?:[\w<>\[\],\?]+)\s+(\w+)\s*\{\s*(?:get|set)";
-
-        foreach (Match match in Regex.Matches(content, propPattern))
-        {
-            props.Add(match.Groups[1].Value);
-        }
-
-        return props.Distinct().ToList();
-    }
-
-    private List<string> ExtractFields(string content, string className)
-    {
-        var fields = new List<string>();
-        var fieldPattern = @"\[(?:SerializeField|SyncVar|Header|Tooltip)[^\]]*\]\s*(?:public|private|protected)?\s*(?:[\w<>\[\],\?]+)\s+(\w+)\s*[;=]";
-
-        foreach (Match match in Regex.Matches(content, fieldPattern))
-        {
-            fields.Add(match.Groups[1].Value);
-        }
-
-        return fields.Distinct().ToList();
     }
 
     private void BuildClassRelations()
@@ -438,6 +606,247 @@ public class ProjectKnowledgeService
     /// </summary>
     public IEnumerable<ProjectFile> GetAllFiles() => _allFiles.Values;
 
+    #region Smart Code Retrieval Methods
+
+    /// <summary>
+    /// Retourne la carte d'un fichier spécifique
+    /// </summary>
+    public FileMap? GetFileMap(string fileNameOrPath)
+    {
+        var key = _fileMaps.Keys.FirstOrDefault(k =>
+            k.EndsWith(fileNameOrPath, StringComparison.OrdinalIgnoreCase) ||
+            Path.GetFileName(k).Equals(fileNameOrPath, StringComparison.OrdinalIgnoreCase));
+
+        return key != null ? _fileMaps[key] : null;
+    }
+
+    /// <summary>
+    /// Retourne UNIQUEMENT le code d'une classe spécifique (sans le reste du fichier)
+    /// </summary>
+    public string? GetClassCode(string className)
+    {
+        if (!_allClasses.TryGetValue(className, out var classInfo))
+            return null;
+
+        var file = _allFiles.Values.FirstOrDefault(f => f.RelativePath == classInfo.FilePath);
+        if (file == null)
+            return null;
+
+        var lines = file.Content.Split('\n');
+        if (classInfo.StartLine <= 0 || classInfo.EndLine <= 0 ||
+            classInfo.StartLine > lines.Length || classInfo.EndLine > lines.Length)
+            return null;
+
+        var classLines = lines.Skip(classInfo.StartLine - 1).Take(classInfo.LineCount);
+        return $"// Fichier: {classInfo.FilePath}\n// Lignes {classInfo.StartLine}-{classInfo.EndLine}\n\n" +
+               string.Join("\n", classLines);
+    }
+
+    /// <summary>
+    /// Retourne UNIQUEMENT le code d'une méthode spécifique
+    /// </summary>
+    public string? GetMethodCode(string className, string methodName)
+    {
+        if (!_allClasses.TryGetValue(className, out var classInfo))
+            return null;
+
+        var method = classInfo.Methods.FirstOrDefault(m =>
+            m.Name.Equals(methodName, StringComparison.OrdinalIgnoreCase));
+        if (method == null)
+            return null;
+
+        var file = _allFiles.Values.FirstOrDefault(f => f.RelativePath == classInfo.FilePath);
+        if (file == null)
+            return null;
+
+        var lines = file.Content.Split('\n');
+        if (method.StartLine <= 0 || method.EndLine <= 0 ||
+            method.StartLine > lines.Length || method.EndLine > lines.Length)
+            return null;
+
+        var methodLines = lines.Skip(method.StartLine - 1).Take(method.EndLine - method.StartLine + 1);
+        return $"// Fichier: {classInfo.FilePath}\n// Classe: {className}\n// Méthode: {methodName} (Lignes {method.StartLine}-{method.EndLine})\n\n" +
+               string.Join("\n", methodLines);
+    }
+
+    /// <summary>
+    /// Retourne un contexte intelligent basé sur une requête
+    /// Trouve les classes et méthodes les plus pertinentes
+    /// </summary>
+    public string GetSmartContext(string query, int maxChars = 8000)
+    {
+        var sb = new StringBuilder();
+        var queryLower = query.ToLower();
+        var keywords = queryLower.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Where(w => w.Length > 2)
+            .ToList();
+
+        // Score les classes par pertinence
+        var scoredClasses = _allClasses.Values
+            .Select(cls => new
+            {
+                Class = cls,
+                Score = CalculateRelevanceScore(cls, keywords, queryLower)
+            })
+            .Where(x => x.Score > 0)
+            .OrderByDescending(x => x.Score)
+            .Take(5)
+            .ToList();
+
+        sb.AppendLine("# CONTEXTE PERTINENT POUR LA REQUÊTE");
+        sb.AppendLine();
+
+        foreach (var item in scoredClasses)
+        {
+            var cls = item.Class;
+            var classCode = GetClassCode(cls.Name);
+
+            if (classCode != null && sb.Length + classCode.Length < maxChars)
+            {
+                sb.AppendLine($"## {cls.Kind} {cls.Name} (score: {item.Score})");
+                sb.AppendLine($"Fichier: {cls.FilePath} | Lignes: {cls.StartLine}-{cls.EndLine}");
+                sb.AppendLine($"Hérite de: {string.Join(", ", cls.BaseClasses)}");
+                sb.AppendLine($"Méthodes: {string.Join(", ", cls.Methods.Select(m => m.Name))}");
+                sb.AppendLine();
+                sb.AppendLine("```csharp");
+                sb.AppendLine(classCode);
+                sb.AppendLine("```");
+                sb.AppendLine();
+            }
+            else if (classCode != null)
+            {
+                // Si la classe est trop grande, on prend juste les méthodes pertinentes
+                sb.AppendLine($"## {cls.Kind} {cls.Name} (score: {item.Score}) [RÉSUMÉ - classe trop grande]");
+                sb.AppendLine($"Fichier: {cls.FilePath} | Lignes: {cls.StartLine}-{cls.EndLine} ({cls.LineCount} lignes)");
+                sb.AppendLine($"Hérite de: {string.Join(", ", cls.BaseClasses)}");
+                sb.AppendLine();
+
+                // Ajouter les méthodes les plus pertinentes
+                var relevantMethods = cls.Methods
+                    .Where(m => keywords.Any(k => m.Name.ToLower().Contains(k)))
+                    .Take(3);
+
+                foreach (var method in relevantMethods)
+                {
+                    var methodCode = GetMethodCode(cls.Name, method.Name);
+                    if (methodCode != null && sb.Length + methodCode.Length < maxChars)
+                    {
+                        sb.AppendLine($"### Méthode: {method.Name}");
+                        sb.AppendLine("```csharp");
+                        sb.AppendLine(methodCode);
+                        sb.AppendLine("```");
+                        sb.AppendLine();
+                    }
+                }
+            }
+
+            if (sb.Length >= maxChars)
+                break;
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Calcule un score de pertinence pour une classe basé sur des mots-clés
+    /// </summary>
+    private int CalculateRelevanceScore(ClassInfo cls, List<string> keywords, string fullQuery)
+    {
+        int score = 0;
+        var classNameLower = cls.Name.ToLower();
+
+        // Score basé sur le nom de la classe
+        foreach (var keyword in keywords)
+        {
+            if (classNameLower.Contains(keyword))
+                score += 10;
+            if (classNameLower == keyword)
+                score += 20;
+        }
+
+        // Score basé sur les noms de méthodes
+        foreach (var method in cls.Methods)
+        {
+            var methodNameLower = method.Name.ToLower();
+            foreach (var keyword in keywords)
+            {
+                if (methodNameLower.Contains(keyword))
+                    score += 5;
+                if (methodNameLower == keyword)
+                    score += 10;
+            }
+        }
+
+        // Score basé sur les classes de base
+        foreach (var baseClass in cls.BaseClasses)
+        {
+            var baseClassLower = baseClass.ToLower();
+            foreach (var keyword in keywords)
+            {
+                if (baseClassLower.Contains(keyword))
+                    score += 3;
+            }
+        }
+
+        // Bonus pour les types importants
+        if (cls.IsMonoBehaviour) score += 2;
+        if (cls.Name.Contains("Manager") || cls.Name.Contains("Controller")) score += 2;
+
+        return score;
+    }
+
+    /// <summary>
+    /// Retourne une liste de toutes les classes avec leurs signatures (pour la carte mentale de l'agent)
+    /// </summary>
+    public string GetClassesOverview()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("# CARTE DES CLASSES DU PROJET");
+        sb.AppendLine();
+
+        foreach (var cls in _allClasses.Values.OrderBy(c => c.FilePath).ThenBy(c => c.Name))
+        {
+            sb.AppendLine($"- **{cls.Name}** ({cls.Kind}) @ `{cls.FilePath}` L{cls.StartLine}-{cls.EndLine}");
+            if (cls.BaseClasses.Any())
+            {
+                sb.AppendLine($"  Hérite: {string.Join(", ", cls.BaseClasses)}");
+            }
+            if (cls.Methods.Any())
+            {
+                var methodsList = cls.Methods.Take(10).Select(m => $"{m.Name}()");
+                sb.Append($"  Méthodes: {string.Join(", ", methodsList)}");
+                if (cls.Methods.Count > 10)
+                    sb.Append($" ... +{cls.Methods.Count - 10}");
+                sb.AppendLine();
+            }
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Retourne les lignes spécifiques d'un fichier (utile pour lire une portion précise)
+    /// </summary>
+    public string? GetFileLines(string fileNameOrPath, int startLine, int endLine)
+    {
+        var file = _allFiles.Values.FirstOrDefault(f =>
+            f.FileName.Equals(fileNameOrPath, StringComparison.OrdinalIgnoreCase) ||
+            f.RelativePath.EndsWith(fileNameOrPath, StringComparison.OrdinalIgnoreCase));
+
+        if (file == null)
+            return null;
+
+        var lines = file.Content.Split('\n');
+        if (startLine < 1) startLine = 1;
+        if (endLine > lines.Length) endLine = lines.Length;
+
+        var selectedLines = lines.Skip(startLine - 1).Take(endLine - startLine + 1);
+        return $"// Fichier: {file.RelativePath}\n// Lignes {startLine}-{endLine}\n\n" +
+               string.Join("\n", selectedLines);
+    }
+
+    #endregion
+
     private string GetRelativePath(string fullPath, string basePath)
     {
         try
@@ -471,6 +880,9 @@ public class ClassInfo
     public string Name { get; set; } = "";
     public string Kind { get; set; } = "class";
     public string FilePath { get; set; } = "";
+    public int StartLine { get; set; }
+    public int EndLine { get; set; }
+    public int LineCount => EndLine - StartLine + 1;
     public List<string> BaseClasses { get; set; } = new();
     public List<MethodInfo> Methods { get; set; } = new();
     public List<string> Properties { get; set; } = new();
@@ -483,7 +895,11 @@ public class MethodInfo
 {
     public string Name { get; set; } = "";
     public string Parameters { get; set; } = "";
+    public string ReturnType { get; set; } = "";
     public bool IsUnityCallback { get; set; }
+    public int StartLine { get; set; }
+    public int EndLine { get; set; }
+    public string Signature { get; set; } = "";
 }
 
 public class SearchResult
@@ -492,4 +908,74 @@ public class SearchResult
     public string Name { get; set; } = "";
     public string FilePath { get; set; } = "";
     public string Description { get; set; } = "";
+}
+
+/// <summary>
+/// Représente un "chunk" de code avec ses limites de lignes
+/// </summary>
+public class CodeChunk
+{
+    public string Name { get; set; } = "";
+    public CodeChunkType Type { get; set; }
+    public string FilePath { get; set; } = "";
+    public int StartLine { get; set; }
+    public int EndLine { get; set; }
+    public int LineCount => EndLine - StartLine + 1;
+    public string Content { get; set; } = "";
+    public string Signature { get; set; } = ""; // Signature sans le corps
+    public List<CodeChunk> Children { get; set; } = new(); // Méthodes dans une classe
+    public string ParentName { get; set; } = ""; // Nom de la classe parente pour les méthodes
+}
+
+public enum CodeChunkType
+{
+    Namespace,
+    Class,
+    Struct,
+    Interface,
+    Enum,
+    Method,
+    Property,
+    Field,
+    Constructor
+}
+
+/// <summary>
+/// Carte complète d'un fichier avec tous ses chunks
+/// </summary>
+public class FileMap
+{
+    public string FilePath { get; set; } = "";
+    public string FileName { get; set; } = "";
+    public int TotalLines { get; set; }
+    public List<string> Namespaces { get; set; } = new();
+    public List<string> Usings { get; set; } = new();
+    public List<CodeChunk> Chunks { get; set; } = new();
+
+    /// <summary>
+    /// Résumé compact du fichier pour le contexte de l'agent
+    /// </summary>
+    public string GetSummary()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"📄 {FileName} ({TotalLines} lignes)");
+
+        foreach (var chunk in Chunks.Where(c => c.Type == CodeChunkType.Class ||
+                                                 c.Type == CodeChunkType.Struct ||
+                                                 c.Type == CodeChunkType.Interface ||
+                                                 c.Type == CodeChunkType.Enum))
+        {
+            sb.AppendLine($"  └─ {chunk.Type} {chunk.Name} (L{chunk.StartLine}-{chunk.EndLine})");
+            foreach (var child in chunk.Children.Take(10))
+            {
+                sb.AppendLine($"      └─ {child.Type} {child.Name}() L{child.StartLine}-{child.EndLine}");
+            }
+            if (chunk.Children.Count > 10)
+            {
+                sb.AppendLine($"      ... et {chunk.Children.Count - 10} autres membres");
+            }
+        }
+
+        return sb.ToString();
+    }
 }

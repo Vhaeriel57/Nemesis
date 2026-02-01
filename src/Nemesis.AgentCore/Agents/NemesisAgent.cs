@@ -327,7 +327,6 @@ Utilise les outils pour rechercher dans le projet avant de répondre.";
     {
         var sb = new StringBuilder();
         const int maxTotalLength = 12000; // 16384 tokens - marge pour system prompt et réponse
-        var currentLength = 0;
 
         // INSTRUCTION CRITIQUE EN PREMIER
         sb.AppendLine("⚠️ RÉPONDS EN FRANÇAIS. Réponds DIRECTEMENT à la question posée.");
@@ -337,75 +336,67 @@ Utilise les outils pour rechercher dans le projet avant de répondre.";
         sb.AppendLine("## QUESTION:");
         sb.AppendLine(userMessage);
         sb.AppendLine();
-        currentLength = sb.Length;
 
-        // Contexte du projet
+        // Contexte intelligent du projet
         if (_projectKnowledge != null && _projectKnowledge.IsLoaded)
         {
-            // Carte du projet
-            var projectMap = _projectKnowledge.GetProjectMap();
-            if (!string.IsNullOrEmpty(projectMap) && currentLength < maxTotalLength - 8000)
-            {
-                sb.AppendLine("## 🗺️ CARTE DU PROJET:");
-                sb.AppendLine(TruncateText(projectMap, 3000));
-                sb.AppendLine();
-                currentLength = sb.Length;
-            }
-
-            // Recherche des classes pertinentes
             var keywords = ExtractKeywords(userMessage);
-            var projectSearchResults = new List<SearchResult>();
-            foreach (var keyword in keywords.Take(5))
-            {
-                projectSearchResults.AddRange(_projectKnowledge.Search(keyword));
-            }
 
-            if (projectSearchResults.Any())
+            // 1. Vue d'ensemble rapide des classes
+            sb.AppendLine("## 🗺️ CLASSES DU PROJET:");
+            var classesOverview = _projectKnowledge.GetClassesOverview();
+            sb.AppendLine(TruncateText(classesOverview, 2500));
+            sb.AppendLine();
+
+            // 2. Contexte INTELLIGENT - seulement le code pertinent
+            var smartContext = _projectKnowledge.GetSmartContext(userMessage, 6000);
+            if (!string.IsNullOrEmpty(smartContext))
             {
-                sb.AppendLine("## 🔍 Classes pertinentes:");
-                foreach (var result in projectSearchResults.DistinctBy(r => r.FilePath).Take(12))
-                {
-                    var line = $"- {result.Name}: {result.FilePath}";
-                    if (currentLength + line.Length < maxTotalLength - 6000)
-                    {
-                        sb.AppendLine(line);
-                        currentLength += line.Length;
-                    }
-                }
+                sb.AppendLine("## 📄 CODE PERTINENT (classes/méthodes complètes):");
+                sb.AppendLine(smartContext);
                 sb.AppendLine();
-
-                // Jusqu'à 3 fichiers pertinents
-                var filesToShow = projectSearchResults.DistinctBy(r => r.FilePath).Take(3).ToList();
-                foreach (var result in filesToShow)
-                {
-                    if (currentLength < maxTotalLength - 2000)
-                    {
-                        var content = _projectKnowledge.GetFileContent(result.FilePath);
-                        if (!string.IsNullOrEmpty(content))
-                        {
-                            sb.AppendLine($"## 📄 Code de {result.Name}:");
-                            sb.AppendLine("```csharp");
-                            sb.AppendLine(TruncateText(content, 2000));
-                            sb.AppendLine("```");
-                            sb.AppendLine();
-                            currentLength = sb.Length;
-                        }
-                    }
-                }
             }
-        }
 
-        // Résultats de recherche automatique (1 seul fichier supplémentaire max)
-        if (searchResults.Any() && currentLength < maxTotalLength - 800)
-        {
-            var firstFile = searchResults.FirstOrDefault(k => k.Key.StartsWith("file_"));
-            if (firstFile.Key != null)
+            // 3. Si demande une classe spécifique, on la récupère en entier
+            foreach (var keyword in keywords)
             {
-                var fileName = firstFile.Key.Substring(5);
-                sb.AppendLine($"### Fichier: `{fileName}`");
-                sb.AppendLine("```csharp");
-                sb.AppendLine(TruncateText(firstFile.Value, 600));
-                sb.AppendLine("```");
+                var classInfo = _projectKnowledge.GetClassInfo(keyword);
+                if (classInfo != null && classInfo.LineCount <= 200) // Seulement si pas trop grande
+                {
+                    var classCode = _projectKnowledge.GetClassCode(keyword);
+                    if (classCode != null && sb.Length + classCode.Length < maxTotalLength - 1500)
+                    {
+                        sb.AppendLine($"## 🎯 Classe demandée: {keyword}");
+                        sb.AppendLine($"Fichier: {classInfo.FilePath} | Lignes: {classInfo.StartLine}-{classInfo.EndLine}");
+                        sb.AppendLine("```csharp");
+                        sb.AppendLine(classCode);
+                        sb.AppendLine("```");
+                        sb.AppendLine();
+                    }
+                    else if (classCode != null)
+                    {
+                        // Classe trop grande - montrer juste les méthodes pertinentes
+                        sb.AppendLine($"## 🎯 Classe demandée: {keyword} (résumé - {classInfo.LineCount} lignes)");
+                        sb.AppendLine($"Fichier: {classInfo.FilePath} | Lignes: {classInfo.StartLine}-{classInfo.EndLine}");
+                        sb.AppendLine($"Méthodes: {string.Join(", ", classInfo.Methods.Select(m => $"{m.Name}() L{m.StartLine}"))}");
+                        sb.AppendLine();
+
+                        // Méthodes les plus pertinentes
+                        foreach (var method in classInfo.Methods.Take(5))
+                        {
+                            var methodCode = _projectKnowledge.GetMethodCode(keyword, method.Name);
+                            if (methodCode != null && sb.Length + methodCode.Length < maxTotalLength - 1000)
+                            {
+                                sb.AppendLine($"### Méthode: {method.Name}");
+                                sb.AppendLine("```csharp");
+                                sb.AppendLine(methodCode);
+                                sb.AppendLine("```");
+                            }
+                        }
+                        sb.AppendLine();
+                    }
+                    break; // Une seule classe spécifique
+                }
             }
         }
 
@@ -652,21 +643,33 @@ Utilise les outils pour rechercher dans le projet avant de répondre.";
             AgentType = AgentType.Manager
         };
 
-        // Phase 4: Recherche dans le projet
+        // Phase 4: Recherche intelligente dans le projet
         if (_projectKnowledge != null && _projectKnowledge.IsLoaded)
         {
             yield return new AgentStreamEvent
             {
                 Type = AgentStreamEventType.AgentThinking,
-                Content = $"📚 Consultation de ma connaissance du projet ({_projectKnowledge.TotalClasses} classes)...",
+                Content = $"📚 Analyse de ma carte du projet ({_projectKnowledge.TotalClasses} classes indexées)...",
                 AgentType = AgentType.Manager
             };
 
+            // Recherche intelligente des classes pertinentes
             var foundClasses = new List<string>();
             foreach (var keyword in keywords.Take(3))
             {
                 var results = _projectKnowledge.Search(keyword);
-                foundClasses.AddRange(results.Take(3).Select(r => r.Name));
+                foreach (var result in results.Take(3))
+                {
+                    var classInfo = _projectKnowledge.GetClassInfo(result.Name);
+                    if (classInfo != null)
+                    {
+                        foundClasses.Add($"{result.Name} (L{classInfo.StartLine}-{classInfo.EndLine})");
+                    }
+                    else
+                    {
+                        foundClasses.Add(result.Name);
+                    }
+                }
             }
 
             if (foundClasses.Any())
@@ -674,10 +677,18 @@ Utilise les outils pour rechercher dans le projet avant de répondre.";
                 yield return new AgentStreamEvent
                 {
                     Type = AgentStreamEventType.AgentThinking,
-                    Content = $"✅ Classes pertinentes trouvées: {string.Join(", ", foundClasses.Distinct().Take(5))}",
+                    Content = $"🎯 Classes/méthodes ciblées: {string.Join(", ", foundClasses.Distinct().Take(5))}",
                     AgentType = AgentType.Manager
                 };
             }
+
+            // Récupération du contexte intelligent
+            yield return new AgentStreamEvent
+            {
+                Type = AgentStreamEventType.AgentThinking,
+                Content = "🧠 Extraction du code pertinent (classes/méthodes complètes, pas de troncature)...",
+                AgentType = AgentType.Manager
+            };
         }
 
         var searchResults = await PerformAutomaticSearchAsync(keywords, context, cancellationToken);
