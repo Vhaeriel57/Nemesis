@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Nemesis.Shared")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+b420656cd5eb083c7d9719114ec65046fe4bbd53")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+44d352b276f6ccc5b894c402686baf261344ac05")]
 [assembly: System.Reflection.AssemblyProductAttribute("Nemesis.Shared")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Nemesis.Shared")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
