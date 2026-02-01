@@ -7,6 +7,7 @@
 @inject RagService RagService
 @inject ProjectCacheService ProjectCacheService
 @inject ProjectKnowledgeService ProjectKnowledgeService
+@inject PersistenceService Persistence
 @inject Nemesis.Server.Services.ProjectService ProjectService
 @inject Nemesis.Server.Services.LogService LogService
 @inject ILlmProvider LlmProvider
@@ -280,6 +281,23 @@
 
             // Refresh recent projects list
             recentProjects = ProjectCacheService.GetRecentProjects();
+
+            // Save to persistent storage
+            var projectName = ProjectService.CurrentProject?.Name ?? System.IO.Path.GetFileName(path);
+            await Persistence.AddOrUpdateProjectAsync(path, projectName);
+
+            // Update project metadata
+            if (ProjectService.CurrentProject != null)
+            {
+                var projectState = Persistence.CurrentProject;
+                if (projectState != null)
+                {
+                    projectState.Metadata.TotalFiles = ProjectKnowledgeService.TotalFiles;
+                    projectState.Metadata.TotalClasses = ProjectKnowledgeService.TotalClasses;
+                    projectState.Metadata.LastIndexed = DateTime.UtcNow;
+                    await Persistence.SaveAsync();
+                }
+            }
         }
         catch (Exception ex)
         {

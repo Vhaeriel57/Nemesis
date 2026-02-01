@@ -1,5 +1,6 @@
 using Nemesis.AgentCore;
 using Nemesis.AgentCore.Models;
+using Nemesis.AgentCore.Services;
 using Nemesis.Server.Hubs;
 using Nemesis.Server.Services;
 
@@ -22,6 +23,7 @@ builder.Services.AddSignalR(options =>
 builder.Services.AddNemesisAgentCore(config);
 builder.Services.AddSingleton<ProjectService>();
 builder.Services.AddSingleton<LogService>();
+builder.Services.AddSingleton<PersistenceService>();
 
 builder.Services.AddCors(options =>
 {
@@ -37,6 +39,11 @@ var app = builder.Build();
 
 // Initialize services
 await app.Services.InitializeNemesisAsync();
+
+// Load persistent data
+var persistence = app.Services.GetRequiredService<PersistenceService>();
+await persistence.LoadAsync();
+Console.WriteLine($"Données persistantes chargées depuis: {persistence.DataPath}");
 
 if (!app.Environment.IsDevelopment())
 {

@@ -1965,3 +1965,290 @@ details summary:hover {
     flex-direction: column;
     min-height: 0;
 }
+
+/* ============================================
+   C# Syntax Highlighting (VS Code Dark Theme)
+   ============================================ */
+
+/* Code blocks - CRITICAL: preserve line breaks */
+.message-body pre,
+.diff-content,
+.code-block pre {
+    white-space: pre !important;
+    overflow-x: auto;
+    tab-size: 4;
+    line-height: 1.5;
+}
+
+.message-body pre code,
+.code-block code {
+    white-space: pre !important;
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    line-height: 1.6;
+}
+
+/* C# Keywords */
+.hljs-keyword,
+.token.keyword,
+.hl-keyword {
+    color: #569cd6 !important; /* blue */
+}
+
+/* C# Types & Classes */
+.hljs-type,
+.hljs-class,
+.token.class-name,
+.token.type,
+.hl-type {
+    color: #4ec9b0 !important; /* teal */
+}
+
+/* C# Strings */
+.hljs-string,
+.token.string,
+.hl-string {
+    color: #ce9178 !important; /* orange */
+}
+
+/* C# Comments */
+.hljs-comment,
+.token.comment,
+.hl-comment {
+    color: #6a9955 !important; /* green */
+    font-style: italic;
+}
+
+/* C# Numbers */
+.hljs-number,
+.token.number,
+.hl-number {
+    color: #b5cea8 !important; /* light green */
+}
+
+/* C# Methods/Functions */
+.hljs-function,
+.hljs-title,
+.token.function,
+.hl-function {
+    color: #dcdcaa !important; /* yellow */
+}
+
+/* C# Variables */
+.hljs-variable,
+.hljs-params,
+.token.variable,
+.hl-variable {
+    color: #9cdcfe !important; /* light blue */
+}
+
+/* C# Operators */
+.hljs-operator,
+.token.operator,
+.hl-operator {
+    color: #d4d4d4 !important;
+}
+
+/* C# Attributes */
+.hljs-meta,
+.token.attribute,
+.hl-attribute {
+    color: #9cdcfe !important;
+}
+
+/* C# Namespace */
+.hljs-namespace,
+.token.namespace,
+.hl-namespace {
+    color: #4ec9b0 !important;
+}
+
+/* C# Preprocessor */
+.hljs-preprocessor,
+.token.preprocessor,
+.hl-preprocessor {
+    color: #808080 !important;
+}
+
+/* Diff Syntax Highlighting */
+.diff-content .diff-add,
+.diff-content .line-add,
+.diff-line-add {
+    background: rgba(0, 210, 106, 0.15);
+    color: #4ade80 !important;
+}
+
+.diff-content .diff-remove,
+.diff-content .line-remove,
+.diff-line-remove {
+    background: rgba(255, 71, 87, 0.15);
+    color: #f87171 !important;
+}
+
+.diff-content .diff-header,
+.diff-line-header {
+    color: #60a5fa !important;
+    font-weight: bold;
+}
+
+/* Custom simple syntax highlighting without external libs */
+/* Applied via JavaScript parsing */
+.code-keyword { color: #569cd6; }
+.code-type { color: #4ec9b0; }
+.code-string { color: #ce9178; }
+.code-comment { color: #6a9955; font-style: italic; }
+.code-number { color: #b5cea8; }
+.code-function { color: #dcdcaa; }
+.code-variable { color: #9cdcfe; }
+.code-attribute { color: #9cdcfe; }
+.code-operator { color: #d4d4d4; }
+.code-namespace { color: #4ec9b0; }
+.code-class { color: #4ec9b0; font-weight: 500; }
+.code-method { color: #dcdcaa; }
+.code-property { color: #9cdcfe; }
+.code-parameter { color: #9cdcfe; }
+.code-modifier { color: #569cd6; }
+.code-control { color: #c586c0; }
+.code-literal { color: #569cd6; }
+
+/* ============================================
+   Project List Styles
+   ============================================ */
+
+.projects-dropdown {
+    position: relative;
+}
+
+.project-selector {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    min-width: 200px;
+}
+
+.project-selector:hover {
+    border-color: var(--accent-primary);
+}
+
+.projects-list-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow);
+    z-index: 1000;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.project-list-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+}
+
+.project-list-item:hover {
+    background: var(--bg-secondary);
+}
+
+.project-list-item:last-child {
+    border-bottom: none;
+}
+
+.project-list-item.active {
+    background: rgba(233, 69, 96, 0.1);
+    border-left: 3px solid var(--accent-primary);
+}
+
+/* ============================================
+   Savepoints & Memory Styles
+   ============================================ */
+
+.savepoints-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.savepoint-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem;
+    background: var(--bg-secondary);
+    border-radius: var(--border-radius);
+    border-left: 3px solid var(--accent-info);
+}
+
+.savepoint-info {
+    flex: 1;
+}
+
+.savepoint-description {
+    font-weight: 500;
+}
+
+.savepoint-time {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.savepoint-patches {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.memory-entry {
+    padding: 0.75rem;
+    background: var(--bg-secondary);
+    border-radius: var(--border-radius);
+    margin-bottom: 0.5rem;
+}
+
+.memory-entry.error-correction {
+    border-left: 3px solid var(--accent-warning);
+}
+
+.memory-entry.learning {
+    border-left: 3px solid var(--accent-success);
+}
+
+.memory-entry.project-note {
+    border-left: 3px solid var(--accent-info);
+}
+
+.memory-summary {
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+}
+
+.memory-content {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.memory-tags {
+    display: flex;
+    gap: 0.25rem;
+    margin-top: 0.5rem;
+}
+
+.memory-tag {
+    padding: 0.1rem 0.4rem;
+    background: var(--bg-primary);
+    border-radius: 1rem;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}

@@ -2,9 +2,11 @@
 @using Nemesis.AgentCore.Orchestration
 @using Nemesis.AgentCore.Services
 @using Nemesis.AgentCore.Tools
+@using Nemesis.Shared.Models
 @inject AgentOrchestrator Orchestrator
 @inject ConversationService ConversationService
 @inject PatchTool PatchTool
+@inject PersistenceService Persistence
 @inject Nemesis.Server.Services.ProjectService ProjectService
 @inject Nemesis.Server.Services.LogService LogService
 @inject IJSRuntime JS
@@ -208,6 +210,7 @@
     private ElementReference textareaRef;
     private AgentConversation? currentConversation;
     private List<string> currentToolCalls = new();
+    private ProjectState? currentProjectState;
 
     private class DisplayMessage
     {
@@ -219,10 +222,33 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // Load persistent project state
+        if (ProjectService.IsProjectIndexed && !string.IsNullOrEmpty(ProjectService.CurrentProject?.Path))
+        {
+            currentProjectState = await Persistence.AddOrUpdateProjectAsync(
+                ProjectService.CurrentProject.Path,
+                ProjectService.CurrentProject.Name);
+
+            // Load persistent chat history
+            var persistedHistory = Persistence.GetChatHistory(currentProjectState.Id);
+            if (persistedHistory.Any())
+            {
+                displayMessages = persistedHistory.Select(m => new DisplayMessage
+                {
+                    Content = m.Content,
+                    IsUser = m.Role == "user",
+                    Timestamp = DateTime.UtcNow
+                }).ToList();
+            }
+        }
+
         await RefreshSessions();
 
-        // Create a new session by default
-        CreateNewConversation();
+        // Create a new session if no history
+        if (!displayMessages.Any())
+        {
+            CreateNewConversation();
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -332,6 +358,16 @@
             Timestamp = DateTime.UtcNow
         });
 
+        // Save to persistent storage
+        if (currentProjectState != null)
+        {
+            await Persistence.AddChatMessageAsync(currentProjectState.Id, new ChatMessage
+            {
+                Role = "user",
+                Content = userMessage
+            });
+        }
+
         StateHasChanged();
         await ScrollToBottom();
 
@@ -392,6 +428,25 @@
                     Timestamp = DateTime.UtcNow,
                     ToolCalls = currentToolCalls.Select(t => new ToolCall { Name = t }).ToList()
                 });
+
+                // Save to persistent storage
+                if (currentProjectState != null)
+                {
+                    await Persistence.AddChatMessageAsync(currentProjectState.Id, new ChatMessage
+                    {
+                        Role = "assistant",
+                        Content = streamingContent
+                    });
+
+                    // Record learning if it contains useful patterns
+                    if (streamingContent.Contains("```") && streamingContent.Length > 500)
+                    {
+                        await Persistence.RecordLearningAsync(
+                            "Code généré: " + userMessage.Substring(0, Math.Min(50, userMessage.Length)),
+                            streamingContent.Substring(0, Math.Min(500, streamingContent.Length)),
+                            new List<string> { "code", "génération" });
+                    }
+                }
             }
         }
         catch (Exception ex)
@@ -403,6 +458,15 @@
                 IsUser = false,
                 Timestamp = DateTime.UtcNow
             });
+
+            // Record error for learning
+            if (currentProjectState != null)
+            {
+                await Persistence.RecordErrorAndCorrectionAsync(
+                    ex.Message,
+                    "Erreur lors de la génération de réponse",
+                    userMessage);
+            }
         }
         finally
         {
