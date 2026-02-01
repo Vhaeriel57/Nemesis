@@ -14,6 +14,7 @@ namespace Nemesis.AgentCore.Agents;
 public class NemesisAgent : BaseAgent
 {
     private readonly IPatchService? _patchService;
+    private readonly Services.PersistenceService? _persistenceService;
 
     public override string Name => "Nemesis";
     public override AgentType Type => AgentType.Manager;
@@ -137,10 +138,12 @@ public class Example : MonoBehaviour
         ILlmProvider llmProvider,
         IEnumerable<ITool> tools,
         ILogger<NemesisAgent> logger,
-        IPatchService? patchService = null)
+        IPatchService? patchService = null,
+        Services.PersistenceService? persistenceService = null)
         : base(llmProvider, tools, logger)
     {
         _patchService = patchService;
+        _persistenceService = persistenceService;
     }
 
     public override async Task<AgentResponse> ProcessAsync(
@@ -602,7 +605,17 @@ public class Example : MonoBehaviour
     private string GetDetailedToolStatus(ToolCall toolCall)
     {
         var toolName = toolCall.Name?.ToLower() ?? "";
-        var args = toolCall.Arguments ?? new Dictionary<string, object>();
+        Dictionary<string, object> args;
+        try
+        {
+            args = !string.IsNullOrEmpty(toolCall.Arguments)
+                ? System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(toolCall.Arguments) ?? new()
+                : new();
+        }
+        catch
+        {
+            args = new();
+        }
 
         return toolName switch
         {
