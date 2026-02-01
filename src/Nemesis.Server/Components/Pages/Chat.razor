@@ -145,17 +145,28 @@
                             <span class="sender">Nemesis</span>
                         </div>
                         <div class="message-body">
-                            <div class="typing-indicator">
-                                <span></span><span></span><span></span>
-                            </div>
-                            @if (!string.IsNullOrEmpty(currentStatus))
+                            @if (thinkingHistory.Any())
                             {
-                                <div class="status-text">@currentStatus</div>
+                                <div class="thinking-timeline">
+                                    @foreach (var thought in thinkingHistory)
+                                    {
+                                        <div class="thinking-entry">
+                                            <span class="thinking-dot"></span>
+                                            <span class="thinking-text">@thought</span>
+                                        </div>
+                                    }
+                                </div>
                             }
                             @if (!string.IsNullOrEmpty(streamingContent))
                             {
                                 <div class="streaming-response">
                                     @((MarkupString)FormatMessage(streamingContent))
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="typing-indicator">
+                                    <span></span><span></span><span></span>
                                 </div>
                             }
                         </div>
@@ -208,6 +219,8 @@
         public List<string> ToolNames { get; set; } = new();
     }
 
+    private List<string> thinkingHistory = new();
+
     protected override async Task OnInitializedAsync()
     {
         await RefreshSessions();
@@ -222,6 +235,8 @@
         {
             await JS.InvokeVoidAsync("initTextareaAutoResize", textareaRef);
         }
+        // Re-apply Prism.js syntax highlighting after every render
+        try { await JS.InvokeVoidAsync("highlightAllCode"); } catch { }
     }
 
     private void CreateNewConversation()
@@ -294,8 +309,9 @@
         inputMessage = "";
         isLoading = true;
         streamingContent = "";
-        currentStatus = "🔍 Analyse de ta demande...";
+        currentStatus = "";
         currentToolCalls.Clear();
+        thinkingHistory.Clear();
 
         // Add user message to display
         displayMessages.Add(new DisplayMessage
@@ -332,21 +348,23 @@
                 switch (evt.Type)
                 {
                     case AgentStreamEventType.AgentThinking:
-                        currentStatus = evt.Content ?? "🤔 Réflexion...";
+                        if (!string.IsNullOrWhiteSpace(evt.Content))
+                        {
+                            thinkingHistory.Add(evt.Content);
+                            currentStatus = evt.Content;
+                        }
                         StateHasChanged();
                         break;
 
                     case AgentStreamEventType.ToolCallComplete:
                         var toolName = evt.Content ?? "outil";
                         currentToolCalls.Add(toolName);
-                        currentStatus = GetToolStatusMessage(toolName);
                         StateHasChanged();
                         break;
 
                     case AgentStreamEventType.TextDelta:
                         if (evt.Content != null)
                         {
-                            currentStatus = "✍️ Rédaction de la réponse...";
                             streamingContent += evt.Content;
                             StateHasChanged();
                         }
@@ -396,6 +414,7 @@
             streamingContent = "";
             currentStatus = "";
             currentToolCalls.Clear();
+            thinkingHistory.Clear();
 
             // Save conversation after each exchange
             if (currentConversation != null)
@@ -448,59 +467,61 @@
     {
         if (string.IsNullOrEmpty(content)) return "";
 
-        // Escape HTML first
-        content = System.Web.HttpUtility.HtmlEncode(content);
-
-        // Format code blocks with syntax highlighting classes
+        // Step 1: Extract code blocks BEFORE HTML encoding to preserve them
+        var codeBlocks = new List<string>();
         content = System.Text.RegularExpressions.Regex.Replace(
             content,
             @"```(\w*)\r?\n([\s\S]*?)```",
             m => {
                 var lang = m.Groups[1].Value;
                 var code = m.Groups[2].Value.Trim();
+                // HTML-encode the code content separately
+                var encodedCode = System.Web.HttpUtility.HtmlEncode(code);
                 var langClass = !string.IsNullOrEmpty(lang) ? $"language-{lang}" : "language-csharp";
-                return $"<div class=\"code-block\"><div class=\"code-header\"><span class=\"code-lang\">{(string.IsNullOrEmpty(lang) ? "code" : lang)}</span><button class=\"copy-btn\" onclick=\"copyCode(this)\">Copier</button></div><pre><code class=\"{langClass}\">{code}</code></pre></div>";
+                var langLabel = string.IsNullOrEmpty(lang) ? "code" : lang.ToUpper();
+                var block = $"<div class=\"code-block\"><div class=\"code-header\"><span class=\"code-lang\">{langLabel}</span><button class=\"copy-btn\" onclick=\"copyCode(this)\">Copier</button></div><pre class=\"line-numbers\"><code class=\"{langClass}\">{encodedCode}</code></pre></div>";
+                var placeholder = $"%%CODEBLOCK_{codeBlocks.Count}%%";
+                codeBlocks.Add(block);
+                return placeholder;
             });
 
-        // Inline code
+        // Step 2: Extract inline code before encoding
+        var inlineBlocks = new List<string>();
         content = System.Text.RegularExpressions.Regex.Replace(
             content,
             @"`([^`]+)`",
-            "<code class=\"inline-code\">$1</code>");
+            m => {
+                var code = System.Web.HttpUtility.HtmlEncode(m.Groups[1].Value);
+                var placeholder = $"%%INLINE_{inlineBlocks.Count}%%";
+                inlineBlocks.Add($"<code class=\"inline-code\">{code}</code>");
+                return placeholder;
+            });
 
-        // Bold
-        content = System.Text.RegularExpressions.Regex.Replace(
-            content,
-            @"\*\*([^*]+)\*\*",
-            "<strong>$1</strong>");
+        // Step 3: Now HTML-encode the rest
+        content = System.Web.HttpUtility.HtmlEncode(content);
 
-        // Italic
-        content = System.Text.RegularExpressions.Regex.Replace(
-            content,
-            @"\*([^*]+)\*",
-            "<em>$1</em>");
+        // Step 4: Restore code blocks (they were already encoded internally)
+        for (int i = 0; i < codeBlocks.Count; i++)
+            content = content.Replace($"%%CODEBLOCK_{i}%%", codeBlocks[i]);
+        for (int i = 0; i < inlineBlocks.Count; i++)
+            content = content.Replace($"%%INLINE_{i}%%", inlineBlocks[i]);
 
-        // Headers
+        // Step 5: Format markdown (bold, italic, headers, lists)
         content = System.Text.RegularExpressions.Regex.Replace(
-            content,
-            @"^### (.+)$",
-            "<h4>$1</h4>",
+            content, @"\*\*([^*]+)\*\*", "<strong>$1</strong>");
+        content = System.Text.RegularExpressions.Regex.Replace(
+            content, @"\*([^*]+)\*", "<em>$1</em>");
+        content = System.Text.RegularExpressions.Regex.Replace(
+            content, @"^### (.+)$", "<h4>$1</h4>",
+            System.Text.RegularExpressions.RegexOptions.Multiline);
+        content = System.Text.RegularExpressions.Regex.Replace(
+            content, @"^## (.+)$", "<h3>$1</h3>",
+            System.Text.RegularExpressions.RegexOptions.Multiline);
+        content = System.Text.RegularExpressions.Regex.Replace(
+            content, @"^- (.+)$", "<li>$1</li>",
             System.Text.RegularExpressions.RegexOptions.Multiline);
 
-        content = System.Text.RegularExpressions.Regex.Replace(
-            content,
-            @"^## (.+)$",
-            "<h3>$1</h3>",
-            System.Text.RegularExpressions.RegexOptions.Multiline);
-
-        // Lists
-        content = System.Text.RegularExpressions.Regex.Replace(
-            content,
-            @"^- (.+)$",
-            "<li>$1</li>",
-            System.Text.RegularExpressions.RegexOptions.Multiline);
-
-        // Newlines
+        // Step 6: Newlines to <br> (but not inside code blocks)
         content = content.Replace("\n", "<br>");
 
         return content;

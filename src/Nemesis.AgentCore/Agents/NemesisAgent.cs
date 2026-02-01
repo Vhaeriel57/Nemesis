@@ -445,22 +445,8 @@ public class Example : MonoBehaviour
         AgentContext context,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        yield return new AgentStreamEvent
-        {
-            Type = AgentStreamEventType.AgentThinking,
-            Content = "🔍 Je lis ta demande... laisse-moi comprendre ce que tu veux vraiment...",
-            AgentType = AgentType.Manager
-        };
-
         // Build comprehensive project context
         var projectContext = BuildEnhancedProjectContext(context);
-
-        yield return new AgentStreamEvent
-        {
-            Type = AgentStreamEventType.AgentThinking,
-            Content = "📚 Je regarde le contexte du projet pour comprendre l'architecture...",
-            AgentType = AgentType.Manager
-        };
 
         // Create the main prompt with project context
         var mainPrompt = $@"## Message de l'utilisateur
@@ -484,13 +470,6 @@ public class Example : MonoBehaviour
         // Get tool definitions from base class Tools dictionary
         var toolDefs = Tools.Values.Select(t => t.Definition).ToList();
 
-        yield return new AgentStreamEvent
-        {
-            Type = AgentStreamEventType.AgentThinking,
-            Content = "🤔 Ok, je réfléchis à la meilleure approche... voyons ce que je peux faire...",
-            AgentType = AgentType.Manager
-        };
-
         // Call LLM with tools available
         var llmResponse = await LlmProvider.CompleteWithToolsAsync(
             messages,
@@ -505,6 +484,18 @@ public class Example : MonoBehaviour
         var toolCalls = new List<ToolCall>();
         var iterations = 0;
         var maxIterations = 8;
+
+        // Extract the LLM's reasoning text BEFORE the tool call JSON and emit it as real thinking
+        var thinkingText = ExtractThinkingFromResponse(llmResponse);
+        if (!string.IsNullOrWhiteSpace(thinkingText))
+        {
+            yield return new AgentStreamEvent
+            {
+                Type = AgentStreamEventType.AgentThinking,
+                Content = thinkingText,
+                AgentType = AgentType.Manager
+            };
+        }
 
         while (toolCall != null && iterations < maxIterations)
         {
@@ -543,15 +534,8 @@ public class Example : MonoBehaviour
             messages.Add(new ChatMessage
             {
                 Role = "tool",
-                Content = $"Résultat de l'outil {toolCall.Name}:\n```\n{toolCall.Result}\n```\n\nContinue ta réponse."
+                Content = $"Résultat de l'outil {toolCall.Name}:\n```\n{toolCall.Result}\n```\n\nContinue ton raisonnement à voix haute, puis utilise d'autres outils si nécessaire, ou donne ta réponse finale avec le code corrigé."
             });
-
-            yield return new AgentStreamEvent
-            {
-                Type = AgentStreamEventType.AgentThinking,
-                Content = $"🤔 Intéressant... j'analyse ce que j'ai trouvé avec {toolCall.Name}... voyons si ça confirme mon hypothèse...",
-                AgentType = AgentType.Manager
-            };
 
             // Get next response
             llmResponse = await LlmProvider.CompleteWithToolsAsync(
@@ -563,6 +547,18 @@ public class Example : MonoBehaviour
                 cancellationToken);
 
             toolCall = ParseToolCall(llmResponse);
+
+            // Extract the LLM's REAL thinking from this iteration
+            thinkingText = ExtractThinkingFromResponse(llmResponse);
+            if (!string.IsNullOrWhiteSpace(thinkingText))
+            {
+                yield return new AgentStreamEvent
+                {
+                    Type = AgentStreamEventType.AgentThinking,
+                    Content = thinkingText,
+                    AgentType = AgentType.Manager
+                };
+            }
         }
 
         // Clean up final response
@@ -600,6 +596,37 @@ public class Example : MonoBehaviour
         }
 
         yield return new AgentStreamEvent { Type = AgentStreamEventType.Complete };
+    }
+
+    /// <summary>
+    /// Extrait le texte de raisonnement du LLM AVANT un éventuel appel d'outil JSON.
+    /// C'est le vrai "thinking" de l'agent, pas un message pré-fabriqué.
+    /// </summary>
+    private string ExtractThinkingFromResponse(string response)
+    {
+        if (string.IsNullOrEmpty(response))
+            return "";
+
+        // Find where the tool call JSON starts (either in ```json block or raw JSON)
+        var jsonBlockMatch = Regex.Match(response, @"```json\s*\{[\s\S]*?""tool""\s*:", RegexOptions.IgnoreCase);
+        var rawJsonMatch = Regex.Match(response, @"\{[\s\S]*?""tool""\s*:", RegexOptions.IgnoreCase);
+
+        int cutIndex = response.Length;
+        if (jsonBlockMatch.Success)
+            cutIndex = Math.Min(cutIndex, jsonBlockMatch.Index);
+        if (rawJsonMatch.Success)
+            cutIndex = Math.Min(cutIndex, rawJsonMatch.Index);
+
+        var thinking = response.Substring(0, cutIndex).Trim();
+
+        // Clean up markdown artifacts
+        thinking = thinking.TrimEnd('`').Trim();
+
+        // Limit length for display
+        if (thinking.Length > 500)
+            thinking = thinking.Substring(0, 500) + "...";
+
+        return thinking;
     }
 
     private string GetDetailedToolStatus(ToolCall toolCall)

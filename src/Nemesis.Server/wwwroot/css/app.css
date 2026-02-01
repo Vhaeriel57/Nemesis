@@ -1759,6 +1759,63 @@ details summary:hover {
     font-style: italic;
 }
 
+/* Thinking Timeline - shows real LLM reasoning */
+.thinking-timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-bottom: 0.75rem;
+    padding: 0.75rem;
+    background: rgba(255, 255, 255, 0.03);
+    border-left: 2px solid var(--accent-primary);
+    border-radius: 0 var(--border-radius) var(--border-radius) 0;
+}
+
+.thinking-entry {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    animation: fadeInThought 0.3s ease-out;
+}
+
+.thinking-dot {
+    width: 6px;
+    height: 6px;
+    min-width: 6px;
+    border-radius: 50%;
+    background: var(--accent-primary);
+    margin-top: 0.45rem;
+    opacity: 0.6;
+}
+
+.thinking-entry:last-child .thinking-dot {
+    opacity: 1;
+    animation: pulseDot 1.5s ease-in-out infinite;
+}
+
+.thinking-text {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-style: italic;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.thinking-entry:last-child .thinking-text {
+    color: var(--text-primary);
+}
+
+@keyframes fadeInThought {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulseDot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.8); }
+}
+
 .streaming-response {
     margin-top: 0.5rem;
 }
