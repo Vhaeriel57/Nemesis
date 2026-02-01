@@ -189,7 +189,7 @@ public class Example : MonoBehaviour
 7. Ne dis JAMAIS ""Vérifiez..."" ou ""Assurez-vous..."" — c'est TOI qui analyses et qui proposes
 8. **OBLIGATOIRE** : Fais TOUJOURS au moins une recherche web avec `web_search` pour compléter tes connaissances. Croise PLUSIEURS sources.
 9. Cite les fichiers consultés ET les sources web
-10. Après un patch, dis : ""📝 Un patch a été créé, va le vérifier dans l'onglet Patches pour le valider.""
+10. Après un patch, dis : ""📝 Un patch a été créé, va le vérifier dans l'onglet Patches pour le valider.""";
 
         // Build messages list
         var messages = BuildMessagesList(context.ChatHistory, mainPrompt);
@@ -484,7 +484,7 @@ public class Example : MonoBehaviour
 7. Ne dis JAMAIS ""Vérifiez..."" ou ""Assurez-vous..."" — c'est TOI qui analyses et qui proposes
 8. **OBLIGATOIRE** : Fais TOUJOURS au moins une recherche web avec `web_search` pour compléter tes connaissances. Croise PLUSIEURS sources.
 9. Cite les fichiers consultés ET les sources web
-10. Après un patch, dis : ""📝 Un patch a été créé, va le vérifier dans l'onglet Patches pour le valider.""
+10. Après un patch, dis : ""📝 Un patch a été créé, va le vérifier dans l'onglet Patches pour le valider.""";
 
         // Build messages list
         var messages = BuildMessagesList(context.ChatHistory, mainPrompt);
