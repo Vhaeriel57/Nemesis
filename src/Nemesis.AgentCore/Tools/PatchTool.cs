@@ -11,7 +11,7 @@ public class PatchTool : ITool, IPatchService
     private readonly bool _autoBackup;
 
     public string Name => "patch";
-    public string Description => "Create, preview, and apply code patches. Always creates backups before modifications.";
+    public string Description => "Create and preview code patches. Patches must be validated by the user in the Patches tab before being applied.";
 
     public ToolDefinition Definition => new()
     {
@@ -23,7 +23,7 @@ public class PatchTool : ITool, IPatchService
             {
                 Type = "string",
                 Description = "The action to perform",
-                Enum = new List<string> { "create", "preview", "apply", "rollback" }
+                Enum = new List<string> { "create", "preview" }
             },
             ["file_path"] = new()
             {
@@ -70,8 +70,8 @@ public class PatchTool : ITool, IPatchService
         {
             "create" => await CreatePatchAsync(parameters, context, cancellationToken),
             "preview" => PreviewPatch(parameters),
-            "apply" => await ApplyPatchToolAsync(parameters, context, cancellationToken),
-            "rollback" => await RollbackPatchToolAsync(parameters, context, cancellationToken),
+            "apply" => new ToolResult { Success = false, Error = "INTERDIT : Tu ne peux PAS appliquer un patch. Seul l'utilisateur peut valider et appliquer les patches depuis l'onglet Patches. Utilise 'create' pour créer un patch en attente de validation." },
+            "rollback" => new ToolResult { Success = false, Error = "INTERDIT : Tu ne peux PAS rollback un patch. Seul l'utilisateur peut gérer les patches depuis l'onglet Patches." },
             _ => new ToolResult { Success = false, Error = $"Unknown action: {action}" }
         };
     }
