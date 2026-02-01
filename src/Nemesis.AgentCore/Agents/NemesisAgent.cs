@@ -83,12 +83,15 @@ Tu génères du code **COMPLET et FONCTIONNEL** :
 - Scripts entiers si nécessaire
 - Tu expliques POURQUOI ta correction résout le problème
 
-## Recherche Web — PLUSIEURS SOURCES DE VÉRITÉ
-Quand tu as besoin d'informations techniques :
+## Recherche Web — OBLIGATOIRE À CHAQUE DEMANDE
+Tu DOIS TOUJOURS faire au moins une recherche web avec `web_search`, même si tu penses connaître la réponse.
+Tes connaissances peuvent être obsolètes ou incomplètes.
+
 1. Tu fais **plusieurs recherches web** avec des angles différents
-2. Tu **croises les sources** (documentation officielle, forums, GitHub, Stack Overflow)
-3. Tu **mentionnes tes sources** et signales les contradictions éventuelles
+2. Tu **croises les sources** (documentation officielle Unity, forums, GitHub, Stack Overflow)
+3. Tu **mentionnes tes sources** dans ta réponse et signales les contradictions éventuelles
 4. Tu ne te fies JAMAIS à une seule source
+5. Tu indiques à l'utilisateur quand tu cherches (""Je vérifie sur la doc Unity..."", ""Je croise avec Stack Overflow..."")
 
 ## Format de Tes Réponses
 
@@ -169,8 +172,8 @@ public class Example : MonoBehaviour
 3. PENSE À VOIX HAUTE : montre ton raisonnement (""Je vois que..."", ""Mon hypothèse est..."", ""Ah, le problème vient de..."")
 4. Si tu trouves un problème, CORRIGE-LE toi-même avec du code complet ou un patch
 5. Ne dis JAMAIS ""Vérifiez..."" ou ""Assurez-vous..."" — c'est TOI qui vérifies et qui corriges
-6. Cherche sur le web si tu as besoin d'informations, avec PLUSIEURS recherches pour croiser les sources
-7. Cite les fichiers consultés";
+6. **OBLIGATOIRE** : Fais TOUJOURS au moins une recherche web avec `web_search` pour compléter tes connaissances, même si tu penses savoir. Croise PLUSIEURS sources.
+7. Cite les fichiers consultés ET les sources web";
 
         // Build messages list
         var messages = BuildMessagesList(context.ChatHistory, mainPrompt);
@@ -461,8 +464,8 @@ public class Example : MonoBehaviour
 3. PENSE À VOIX HAUTE : montre ton raisonnement (""Je vois que..."", ""Mon hypothèse est..."", ""Ah, le problème vient de..."")
 4. Si tu trouves un problème, CORRIGE-LE toi-même avec du code complet ou un patch
 5. Ne dis JAMAIS ""Vérifiez..."" ou ""Assurez-vous..."" — c'est TOI qui vérifies et qui corriges
-6. Cherche sur le web si tu as besoin d'informations, avec PLUSIEURS recherches pour croiser les sources
-7. Cite les fichiers consultés";
+6. **OBLIGATOIRE** : Fais TOUJOURS au moins une recherche web avec `web_search` pour compléter tes connaissances, même si tu penses savoir. Croise PLUSIEURS sources.
+7. Cite les fichiers consultés ET les sources web";
 
         // Build messages list
         var messages = BuildMessagesList(context.ChatHistory, mainPrompt);
