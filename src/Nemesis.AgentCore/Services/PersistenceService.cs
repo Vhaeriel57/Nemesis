@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
+using Nemesis.Shared.DTOs;
 using Nemesis.Shared.Models;
 
 namespace Nemesis.AgentCore.Services;
