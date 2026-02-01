@@ -224,9 +224,6 @@
     protected override async Task OnInitializedAsync()
     {
         await RefreshSessions();
-
-        // Create a new session by default
-        CreateNewConversation();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -281,8 +278,9 @@
             await ConversationService.SaveConversation(currentConversation);
         }
 
-        // Create new conversation
-        CreateNewConversation();
+        // Reset to empty state (conversation created lazily on first message)
+        currentConversation = null;
+        conversationId = "";
         displayMessages.Clear();
         streamingContent = "";
         currentStatus = "";
@@ -312,6 +310,12 @@
         currentStatus = "";
         currentToolCalls.Clear();
         thinkingHistory.Clear();
+
+        // Create conversation lazily on first message
+        if (currentConversation == null)
+        {
+            CreateNewConversation();
+        }
 
         // Add user message to display
         displayMessages.Add(new DisplayMessage
