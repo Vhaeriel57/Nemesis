@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "dgSpecHash": "uz6plsgI1kY=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\maxim\\Nemesis\\src\\Nemesis.Shared\\Nemesis.Shared.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\maxim\\.nuget\\packages\\system.text.json\\8.0.5\\system.text.json.8.0.5.nupkg.sha512"
+  ],
+  "logs": []
+}
