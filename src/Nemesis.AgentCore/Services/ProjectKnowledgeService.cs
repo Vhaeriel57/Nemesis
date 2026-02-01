@@ -166,7 +166,6 @@ public class ProjectKnowledgeService
     private void ParseTypesWithLineNumbers(string[] lines, string filePath, FileMap fileMap)
     {
         var typePattern = @"^\s*(?:public|private|protected|internal)?\s*(?:partial\s+)?(?:abstract\s+)?(?:sealed\s+)?(?:static\s+)?(class|struct|interface|enum)\s+(\w+)";
-        var methodPattern = @"^\s*(?:\[[^\]]+\]\s*)*(?:public|private|protected|internal)?\s*(?:static\s+)?(?:virtual\s+)?(?:override\s+)?(?:async\s+)?(?:[\w<>\[\],\?\s]+)\s+(\w+)\s*\(([^)]*)\)\s*(?:where\s+[^{]+)?";
 
         int braceDepth = 0;
         CodeChunk? currentType = null;

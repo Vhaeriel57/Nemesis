@@ -91,6 +91,9 @@ public static class ServiceCollectionExtensions
         // Project cache service
         services.AddSingleton<ProjectCacheService>();
 
+        // Project knowledge service
+        services.AddSingleton<ProjectKnowledgeService>();
+
         // Orchestrator
         services.AddSingleton<AgentOrchestrator>();
 
