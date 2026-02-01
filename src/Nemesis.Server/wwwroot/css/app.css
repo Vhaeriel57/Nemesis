@@ -1759,6 +1759,43 @@ details summary:hover {
     font-style: italic;
 }
 
+/* Thinking Steps Display */
+.thinking-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-bottom: 1rem;
+    padding: 0.75rem 1rem;
+    background: rgba(99, 102, 241, 0.08);
+    border-radius: 8px;
+    border-left: 3px solid var(--accent-primary);
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.thinking-step {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    padding: 0.2rem 0;
+    animation: fadeInStep 0.3s ease-out;
+}
+
+.thinking-step:last-child {
+    color: var(--accent-primary);
+    font-weight: 500;
+}
+
+@keyframes fadeInStep {
+    from {
+        opacity: 0;
+        transform: translateX(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
 .streaming-response {
     margin-top: 0.5rem;
 }

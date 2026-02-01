@@ -145,17 +145,25 @@
                             <span class="sender">Nemesis</span>
                         </div>
                         <div class="message-body">
-                            <div class="typing-indicator">
-                                <span></span><span></span><span></span>
-                            </div>
-                            @if (!string.IsNullOrEmpty(currentStatus))
+                            @if (thinkingSteps.Any())
                             {
-                                <div class="status-text">@currentStatus</div>
+                                <div class="thinking-steps">
+                                    @foreach (var step in thinkingSteps)
+                                    {
+                                        <div class="thinking-step">@step</div>
+                                    }
+                                </div>
                             }
                             @if (!string.IsNullOrEmpty(streamingContent))
                             {
                                 <div class="streaming-response">
                                     @((MarkupString)FormatMessage(streamingContent))
+                                </div>
+                            }
+                            else if (!thinkingSteps.Any())
+                            {
+                                <div class="typing-indicator">
+                                    <span></span><span></span><span></span>
                                 </div>
                             }
                         </div>
@@ -195,6 +203,7 @@
     private bool isLoading = false;
     private string streamingContent = "";
     private string currentStatus = "";
+    private List<string> thinkingSteps = new(); // Liste des étapes de réflexion
     private ElementReference messagesContainer;
     private ElementReference textareaRef;
     private AgentConversation? currentConversation;
@@ -271,6 +280,7 @@
         displayMessages.Clear();
         streamingContent = "";
         currentStatus = "";
+        thinkingSteps.Clear();
         currentToolCalls.Clear();
 
         await RefreshSessions();
@@ -294,7 +304,8 @@
         inputMessage = "";
         isLoading = true;
         streamingContent = "";
-        currentStatus = "🔍 Analyse de ta demande...";
+        currentStatus = "";
+        thinkingSteps.Clear();
         currentToolCalls.Clear();
 
         // Add user message to display
@@ -332,21 +343,24 @@
                 switch (evt.Type)
                 {
                     case AgentStreamEventType.AgentThinking:
-                        currentStatus = evt.Content ?? "🤔 Réflexion...";
+                        var thinkingContent = evt.Content ?? "🤔 Réflexion...";
+                        thinkingSteps.Add(thinkingContent);
+                        currentStatus = thinkingContent;
                         StateHasChanged();
                         break;
 
                     case AgentStreamEventType.ToolCallComplete:
                         var toolName = evt.Content ?? "outil";
                         currentToolCalls.Add(toolName);
-                        currentStatus = GetToolStatusMessage(toolName);
+                        var toolStatus = GetToolStatusMessage(toolName);
+                        thinkingSteps.Add(toolStatus);
+                        currentStatus = toolStatus;
                         StateHasChanged();
                         break;
 
                     case AgentStreamEventType.TextDelta:
                         if (evt.Content != null)
                         {
-                            currentStatus = "✍️ Rédaction de la réponse...";
                             streamingContent += evt.Content;
                             StateHasChanged();
                         }
@@ -395,6 +409,7 @@
             isLoading = false;
             streamingContent = "";
             currentStatus = "";
+            thinkingSteps.Clear();
             currentToolCalls.Clear();
 
             // Save conversation after each exchange

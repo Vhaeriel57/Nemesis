@@ -326,7 +326,7 @@ Utilise les outils pour rechercher dans le projet avant de répondre.";
     private string BuildEnrichedPrompt(string userMessage, AgentContext context, Dictionary<string, string> searchResults)
     {
         var sb = new StringBuilder();
-        const int maxTotalLength = 6000; // 8192 tokens - marge pour system prompt et réponse
+        const int maxTotalLength = 12000; // 16384 tokens - marge pour system prompt et réponse
         var currentLength = 0;
 
         // INSTRUCTION CRITIQUE EN PREMIER
@@ -342,12 +342,12 @@ Utilise les outils pour rechercher dans le projet avant de répondre.";
         // Contexte du projet
         if (_projectKnowledge != null && _projectKnowledge.IsLoaded)
         {
-            // Carte du projet (résumé court)
+            // Carte du projet
             var projectMap = _projectKnowledge.GetProjectMap();
-            if (!string.IsNullOrEmpty(projectMap) && currentLength < maxTotalLength - 4000)
+            if (!string.IsNullOrEmpty(projectMap) && currentLength < maxTotalLength - 8000)
             {
                 sb.AppendLine("## 🗺️ CARTE DU PROJET:");
-                sb.AppendLine(TruncateText(projectMap, 1500));
+                sb.AppendLine(TruncateText(projectMap, 3000));
                 sb.AppendLine();
                 currentLength = sb.Length;
             }
@@ -363,10 +363,10 @@ Utilise les outils pour rechercher dans le projet avant de répondre.";
             if (projectSearchResults.Any())
             {
                 sb.AppendLine("## 🔍 Classes pertinentes:");
-                foreach (var result in projectSearchResults.DistinctBy(r => r.FilePath).Take(8))
+                foreach (var result in projectSearchResults.DistinctBy(r => r.FilePath).Take(12))
                 {
                     var line = $"- {result.Name}: {result.FilePath}";
-                    if (currentLength + line.Length < maxTotalLength - 3000)
+                    if (currentLength + line.Length < maxTotalLength - 6000)
                     {
                         sb.AppendLine(line);
                         currentLength += line.Length;
@@ -374,18 +374,22 @@ Utilise les outils pour rechercher dans le projet avant de répondre.";
                 }
                 sb.AppendLine();
 
-                // UN SEUL fichier le plus pertinent
-                var mostRelevant = projectSearchResults.FirstOrDefault();
-                if (mostRelevant != null && currentLength < maxTotalLength - 1500)
+                // Jusqu'à 3 fichiers pertinents
+                var filesToShow = projectSearchResults.DistinctBy(r => r.FilePath).Take(3).ToList();
+                foreach (var result in filesToShow)
                 {
-                    var content = _projectKnowledge.GetFileContent(mostRelevant.FilePath);
-                    if (!string.IsNullOrEmpty(content))
+                    if (currentLength < maxTotalLength - 2000)
                     {
-                        sb.AppendLine($"## 📄 Code de {mostRelevant.Name}:");
-                        sb.AppendLine("```csharp");
-                        sb.AppendLine(TruncateText(content, 1200));
-                        sb.AppendLine("```");
-                        currentLength = sb.Length;
+                        var content = _projectKnowledge.GetFileContent(result.FilePath);
+                        if (!string.IsNullOrEmpty(content))
+                        {
+                            sb.AppendLine($"## 📄 Code de {result.Name}:");
+                            sb.AppendLine("```csharp");
+                            sb.AppendLine(TruncateText(content, 2000));
+                            sb.AppendLine("```");
+                            sb.AppendLine();
+                            currentLength = sb.Length;
+                        }
                     }
                 }
             }
@@ -701,7 +705,7 @@ Utilise les outils pour rechercher dans le projet avant de répondre.";
         var toolDefs = Tools.Values.Select(t => t.Definition).ToList();
 
         var llmResponse = await LlmProvider.CompleteWithToolsAsync(
-            messages, toolDefs, SystemPrompt, 0.3, 2048, cancellationToken);
+            messages, toolDefs, SystemPrompt, 0.3, 4096, cancellationToken);
 
         // Phase 6: Traitement des outils
         var toolCall = ParseToolCall(llmResponse);
@@ -745,7 +749,7 @@ Utilise les outils pour rechercher dans le projet avant de répondre.";
             });
 
             llmResponse = await LlmProvider.CompleteWithToolsAsync(
-                messages, toolDefs, SystemPrompt, 0.3, 2048, cancellationToken);
+                messages, toolDefs, SystemPrompt, 0.3, 4096, cancellationToken);
 
             toolCall = ParseToolCall(llmResponse);
         }
