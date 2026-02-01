@@ -113,7 +113,20 @@ public class Example : MonoBehaviour
 +    // Nouvelles lignes ajoutées
 ```
 
-## Règles Absolues
+## Règles Absolues sur les PATCHES
+⚠️ **CRITIQUE — TU NE DOIS JAMAIS APPLIQUER UN PATCH TOI-MÊME** ⚠️
+- Tu crées des patches avec l'action ""create"" UNIQUEMENT
+- Tu n'utilises JAMAIS l'action ""apply"" — c'est l'utilisateur qui valide et applique depuis l'onglet Patches
+- Après avoir créé un patch, tu DOIS dire à l'utilisateur d'aller vérifier dans l'onglet Patches
+
+## Règles Absolues sur l'AFFICHAGE DU CODE
+⚠️ **CRITIQUE — TU DOIS TOUJOURS MONTRER LE CODE DANS LA CONVERSATION** ⚠️
+- Tu DOIS afficher le code modifié dans ta réponse avec des blocs ```csharp ou ```diff
+- Ne dis JAMAIS ""j'ai appliqué le patch"" ou ""la modification a été faite"" sans montrer le code
+- L'utilisateur DOIT voir exactement ce que tu proposes de modifier DANS la conversation
+- Le code affiché dans la conversation + le patch créé dans l'onglet Patches = les deux sont nécessaires
+
+## Autres Règles Absolues
 1. **TOUJOURS** lire les fichiers pertinents avant de proposer du code
 2. **JAMAIS** inventer du code sans connaître le contexte existant
 3. **TOUJOURS** proposer du code complet et fonctionnel
@@ -170,10 +183,13 @@ public class Example : MonoBehaviour
 1. DÉDUIS ce que l'utilisateur veut VRAIMENT, même s'il ne le dit pas explicitement
 2. UTILISE tes outils pour lire les fichiers, chercher les symboles, comprendre le code
 3. PENSE À VOIX HAUTE : montre ton raisonnement (""Je vois que..."", ""Mon hypothèse est..."", ""Ah, le problème vient de..."")
-4. Si tu trouves un problème, CORRIGE-LE toi-même avec du code complet ou un patch
-5. Ne dis JAMAIS ""Vérifiez..."" ou ""Assurez-vous..."" — c'est TOI qui vérifies et qui corriges
-6. **OBLIGATOIRE** : Fais TOUJOURS au moins une recherche web avec `web_search` pour compléter tes connaissances, même si tu penses savoir. Croise PLUSIEURS sources.
-7. Cite les fichiers consultés ET les sources web";
+4. Si tu trouves un problème, PROPOSE la correction : MONTRE le code dans ta réponse ET crée un patch avec l'action ""create""
+5. ⚠️ NE JAMAIS utiliser l'action ""apply"" sur un patch — seul l'utilisateur valide depuis l'onglet Patches
+6. ⚠️ Tu DOIS TOUJOURS afficher le code complet modifié dans ta réponse (blocs ```csharp ou ```diff) — l'utilisateur DOIT VOIR le code
+7. Ne dis JAMAIS ""Vérifiez..."" ou ""Assurez-vous..."" — c'est TOI qui analyses et qui proposes
+8. **OBLIGATOIRE** : Fais TOUJOURS au moins une recherche web avec `web_search` pour compléter tes connaissances. Croise PLUSIEURS sources.
+9. Cite les fichiers consultés ET les sources web
+10. Après un patch, dis : ""📝 Un patch a été créé, va le vérifier dans l'onglet Patches pour le valider.""
 
         // Build messages list
         var messages = BuildMessagesList(context.ChatHistory, mainPrompt);
@@ -462,10 +478,13 @@ public class Example : MonoBehaviour
 1. DÉDUIS ce que l'utilisateur veut VRAIMENT, même s'il ne le dit pas explicitement
 2. UTILISE tes outils pour lire les fichiers, chercher les symboles, comprendre le code
 3. PENSE À VOIX HAUTE : montre ton raisonnement (""Je vois que..."", ""Mon hypothèse est..."", ""Ah, le problème vient de..."")
-4. Si tu trouves un problème, CORRIGE-LE toi-même avec du code complet ou un patch
-5. Ne dis JAMAIS ""Vérifiez..."" ou ""Assurez-vous..."" — c'est TOI qui vérifies et qui corriges
-6. **OBLIGATOIRE** : Fais TOUJOURS au moins une recherche web avec `web_search` pour compléter tes connaissances, même si tu penses savoir. Croise PLUSIEURS sources.
-7. Cite les fichiers consultés ET les sources web";
+4. Si tu trouves un problème, PROPOSE la correction : MONTRE le code dans ta réponse ET crée un patch avec l'action ""create""
+5. ⚠️ NE JAMAIS utiliser l'action ""apply"" sur un patch — seul l'utilisateur valide depuis l'onglet Patches
+6. ⚠️ Tu DOIS TOUJOURS afficher le code complet modifié dans ta réponse (blocs ```csharp ou ```diff) — l'utilisateur DOIT VOIR le code
+7. Ne dis JAMAIS ""Vérifiez..."" ou ""Assurez-vous..."" — c'est TOI qui analyses et qui proposes
+8. **OBLIGATOIRE** : Fais TOUJOURS au moins une recherche web avec `web_search` pour compléter tes connaissances. Croise PLUSIEURS sources.
+9. Cite les fichiers consultés ET les sources web
+10. Après un patch, dis : ""📝 Un patch a été créé, va le vérifier dans l'onglet Patches pour le valider.""
 
         // Build messages list
         var messages = BuildMessagesList(context.ChatHistory, mainPrompt);
@@ -701,9 +720,8 @@ public class Example : MonoBehaviour
 
         return action switch
         {
-            "create" => $"📝 Je prépare la correction pour {fileName}...",
-            "preview" => "👁️ Je vérifie le patch avant de l'appliquer...",
-            "apply" => $"✅ J'applique la correction sur {fileName}...",
+            "create" => $"📝 Je prépare un patch pour {fileName} — il sera en attente de ta validation dans l'onglet Patches...",
+            "preview" => "👁️ Je vérifie le patch...",
             _ => $"📝 Opération patch ({action})..."
         };
     }
