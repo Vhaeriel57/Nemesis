@@ -21,6 +21,7 @@ public class AgentHub : Hub
     private readonly PatchTool _patchTool;
     private readonly ProjectService _projectService;
     private readonly ProjectCacheService _projectCacheService;
+    private readonly ProjectKnowledgeService _knowledgeService;
     private readonly LogService _logService;
     private readonly ILlmProvider _llmProvider;
     private readonly ILogger<AgentHub> _logger;
@@ -32,6 +33,7 @@ public class AgentHub : Hub
         PatchTool patchTool,
         ProjectService projectService,
         ProjectCacheService projectCacheService,
+        ProjectKnowledgeService knowledgeService,
         LogService logService,
         ILlmProvider llmProvider,
         ILogger<AgentHub> logger)
@@ -42,6 +44,7 @@ public class AgentHub : Hub
         _patchTool = patchTool;
         _projectService = projectService;
         _projectCacheService = projectCacheService;
+        _knowledgeService = knowledgeService;
         _logService = logService;
         _llmProvider = llmProvider;
         _logger = logger;
@@ -105,6 +108,10 @@ public class AgentHub : Hub
                 _logService.AddLog(NemesisLogLevel.Info, "Cache", $"Project cache saved: {projectPath}");
             }
 
+            // Load project knowledge for intelligent context
+            await _knowledgeService.LoadProjectAsync(projectPath);
+            _logService.AddLog(NemesisLogLevel.Info, "Knowledge", $"Project knowledge loaded: {_knowledgeService.TotalClasses} classes");
+
             _logService.AddLog(NemesisLogLevel.Info, "Indexer", $"Indexing complete: {projectInfo.TotalFiles} files, {projectInfo.TotalTypes} types");
 
             // Update recent projects list
@@ -149,6 +156,9 @@ public class AgentHub : Hub
                 // Load cached index
                 _codeIndexer.LoadIndex(cachedIndex);
                 _projectService.CurrentProject = cacheInfo.ProjectInfo;
+
+                // Load project knowledge for intelligent context
+                await _knowledgeService.LoadProjectAsync(projectPath);
 
                 _logService.AddLog(NemesisLogLevel.Info, "Cache",
                     $"Project loaded from cache: {cacheInfo.ProjectInfo.TotalFiles} files, cached at {cacheInfo.CachedAt:g}");

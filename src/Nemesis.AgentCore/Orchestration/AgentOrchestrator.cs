@@ -14,6 +14,7 @@ public class AgentOrchestrator
     private readonly Dictionary<AgentType, IAgent> _agents;
     private readonly CodeIndexer _codeIndexer;
     private readonly RagService _ragService;
+    private readonly Services.ProjectKnowledgeService _knowledgeService;
     private readonly ILogger<AgentOrchestrator> _logger;
 
     private readonly Dictionary<string, List<ChatMessage>> _chatHistories = new();
@@ -31,11 +32,13 @@ public class AgentOrchestrator
         IEnumerable<IAgent> agents,
         CodeIndexer codeIndexer,
         RagService ragService,
+        Services.ProjectKnowledgeService knowledgeService,
         ILogger<AgentOrchestrator> logger)
     {
         _agents = agents.ToDictionary(a => a.Type, a => a);
         _codeIndexer = codeIndexer;
         _ragService = ragService;
+        _knowledgeService = knowledgeService;
         _logger = logger;
     }
 
@@ -164,6 +167,24 @@ public class AgentOrchestrator
             ProjectPath = _codeIndexer.CurrentProjectPath ?? "",
             ChatHistory = history.TakeLast(20).ToList()
         };
+
+        // Inject project knowledge map if available
+        if (_knowledgeService.IsLoaded)
+        {
+            // Always include the project map (architecture overview)
+            var projectMap = _knowledgeService.GetProjectMap();
+            if (!string.IsNullOrEmpty(projectMap))
+            {
+                context.Metadata["project_map"] = projectMap;
+            }
+
+            // Include smart context relevant to the user's message
+            var smartContext = _knowledgeService.GetSmartContext(message, maxChars: 6000);
+            if (!string.IsNullOrEmpty(smartContext))
+            {
+                context.Metadata["smart_context"] = smartContext;
+            }
+        }
 
         // Detect if this is a general project question
         var isGeneralProjectQuestion = IsGeneralProjectQuestion(message);

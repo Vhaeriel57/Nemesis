@@ -331,6 +331,22 @@ Pour modifier du code, utilise l'outil patch avec :
         sb.AppendLine($"**Projet**: `{context.ProjectPath}`");
         sb.AppendLine();
 
+        // Project map — architecture overview (always present if project is loaded)
+        if (context.Metadata.TryGetValue("project_map", out var projectMap) && projectMap is string map && !string.IsNullOrEmpty(map))
+        {
+            sb.AppendLine("### 🗺️ Carte du Projet (architecture)");
+            sb.AppendLine(map);
+            sb.AppendLine();
+        }
+
+        // Smart context — classes/methods most relevant to the user's question
+        if (context.Metadata.TryGetValue("smart_context", out var smartCtx) && smartCtx is string smart && !string.IsNullOrEmpty(smart))
+        {
+            sb.AppendLine("### 🎯 Contexte pertinent pour ta question");
+            sb.AppendLine(smart);
+            sb.AppendLine();
+        }
+
         if (context.RelevantFiles.Any())
         {
             sb.AppendLine("### Fichiers pertinents identifiés:");
