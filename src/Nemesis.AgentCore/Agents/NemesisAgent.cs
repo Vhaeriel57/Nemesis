@@ -309,11 +309,21 @@ Pour modifier du code, utilise l'outil patch avec :
 
     private string CleanToolCallsFromResponse(string response)
     {
+        // Remove ```json { "tool": "..." ... } ``` blocks
         var cleaned = Regex.Replace(
             response,
-            @"\{[\s\S]*?""tool""\s*:\s*""[^""]+""[\s\S]*?\}",
+            @"```json\s*\{[^`]*?""tool""\s*:\s*""[^""]+""[^`]*?\}\s*```",
+            "",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline);
+
+        // Remove standalone tool call JSON (line starting with { and containing "tool":)
+        cleaned = Regex.Replace(
+            cleaned,
+            @"(?m)^\s*\{[^\n]*""tool""\s*:\s*""[^""]+""[^\}]*\}\s*$",
             "",
             RegexOptions.IgnoreCase);
+
+        // Clean empty json blocks
         cleaned = Regex.Replace(cleaned, @"```json\s*```", "", RegexOptions.IgnoreCase);
         return cleaned.Trim();
     }
