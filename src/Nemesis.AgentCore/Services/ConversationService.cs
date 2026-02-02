@@ -134,6 +134,9 @@ public class ConversationService
 
         try
         {
+            if (!Directory.Exists(_storagePath))
+                Directory.CreateDirectory(_storagePath);
+
             var files = Directory.GetFiles(_storagePath, "*.json");
             foreach (var file in files)
             {
