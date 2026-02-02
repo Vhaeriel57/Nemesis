@@ -205,7 +205,7 @@ Fais au moins UNE recherche `web_search` par demande.
             Logger.LogWarning("CleanToolCallsFromResponse stripped entire response — recovering");
             response.Content = CleanToolCallsFromResponse(allResponsesAccumulator.ToString());
             if (string.IsNullOrWhiteSpace(response.Content))
-                response.Content = allResponsesAccumulator.ToString();
+                response.Content = "J'ai exploré le code avec mes outils mais je n'ai pas pu formuler une réponse complète. Peux-tu reformuler ta demande ou me donner plus de détails ?";
         }
 
         // Extract patches from ALL accumulated LLM responses
@@ -270,22 +270,33 @@ Fais au moins UNE recherche `web_search` par demande.
 
     private string CleanToolCallsFromResponse(string response)
     {
-        // Remove ```json { "tool": "..." ... } ``` blocks
+        if (string.IsNullOrEmpty(response)) return "";
+
+        // Remove ```json ... ``` blocks that contain tool calls
         var cleaned = Regex.Replace(
             response,
-            @"```json\s*\{[^`]*?""tool""\s*:\s*""[^""]+""[^`]*?\}\s*```",
-            "",
-            RegexOptions.IgnoreCase | RegexOptions.Singleline);
-
-        // Remove standalone tool call JSON (line starting with { and containing "tool":)
-        cleaned = Regex.Replace(
-            cleaned,
-            @"(?m)^\s*\{[^\n]*""tool""\s*:\s*""[^""]+""[^\}]*\}\s*$",
+            @"```json\s*\{[\s\S]*?""tool""\s*:[\s\S]*?\}\s*```",
             "",
             RegexOptions.IgnoreCase);
 
-        // Clean empty json blocks
+        // Remove multiline bare JSON tool calls: starts with { on its own line,
+        // contains "tool":, ends with } on its own line
+        cleaned = Regex.Replace(
+            cleaned,
+            @"\{\s*\n\s*""tool""\s*:[\s\S]*?\n\s*\}",
+            "",
+            RegexOptions.IgnoreCase);
+
+        // Remove single-line JSON tool calls
+        cleaned = Regex.Replace(
+            cleaned,
+            @"\{[^{}]*""tool""\s*:\s*""[^""]+""[^{}]*\}",
+            "",
+            RegexOptions.IgnoreCase);
+
+        // Clean empty json blocks and leftover backticks
         cleaned = Regex.Replace(cleaned, @"```json\s*```", "", RegexOptions.IgnoreCase);
+        cleaned = Regex.Replace(cleaned, @"```\s*```", "");
         return cleaned.Trim();
     }
 
@@ -703,11 +714,11 @@ Fais au moins UNE recherche `web_search` par demande.
             var accumulated = allResponsesAccumulator.ToString();
             finalContent = CleanToolCallsFromResponse(accumulated);
 
-            // If still empty, just use the raw response without cleaning
+            // If still empty, don't show raw JSON — show a meaningful message
             if (string.IsNullOrWhiteSpace(finalContent))
             {
-                Logger.LogWarning("Recovery also empty — using raw accumulated responses");
-                finalContent = accumulated;
+                Logger.LogWarning("Recovery also empty — all LLM responses were tool calls with no text");
+                finalContent = "J'ai exploré le code avec mes outils mais je n'ai pas pu formuler une réponse complète. Peux-tu reformuler ta demande ou me donner plus de détails ?";
             }
         }
 
