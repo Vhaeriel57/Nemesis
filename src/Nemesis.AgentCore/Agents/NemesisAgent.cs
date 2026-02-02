@@ -176,6 +176,8 @@ Pour modifier du code, utilise l'outil patch avec :
         var toolCall = ParseToolCall(llmResponse);
         var iterations = 0;
         var maxIterations = 8;
+        var allResponsesAccumulator = new StringBuilder();
+        allResponsesAccumulator.AppendLine(llmResponse);
 
         while (toolCall != null && iterations < maxIterations)
         {
@@ -209,13 +211,15 @@ Pour modifier du code, utilise l'outil patch avec :
                 cancellationToken);
 
             toolCall = ParseToolCall(llmResponse);
+            allResponsesAccumulator.AppendLine(llmResponse);
         }
 
         // Clean up any remaining tool call JSON from final response
         response.Content = CleanToolCallsFromResponse(llmResponse);
 
-        // Extract any patches from the response
-        var patches = ExtractPatchesFromResponse(response.Content, context.ProjectPath);
+        // Extract patches from ALL accumulated LLM responses
+        var allResponses = allResponsesAccumulator.ToString();
+        var patches = ExtractPatchesFromResponse(allResponses, context.ProjectPath);
         if (patches.Any())
         {
             response.GeneratedPatches = new PatchSet
@@ -370,14 +374,21 @@ Pour modifier du code, utilise l'outil patch avec :
             }
         }
 
-        // 2. Look for ALL ```csharp blocks (the main way LLMs output code)
-        var csharpPattern = @"```csharp\s*([\s\S]*?)```";
-        var csharpMatches = Regex.Matches(response, csharpPattern);
+        // 2. Look for ALL code blocks — match ```csharp, ```cs, ```c#, ```C#, or bare ``` with C#-like content
+        var codePattern = @"```(?:csharp|cs|c#)?\s*\r?\n([\s\S]*?)```";
+        var codeMatches = Regex.Matches(response, codePattern, RegexOptions.IgnoreCase);
 
-        foreach (Match match in csharpMatches)
+        foreach (Match match in codeMatches)
         {
             var code = match.Groups[1].Value.Trim();
             if (string.IsNullOrEmpty(code) || code.Length < 20) continue;
+
+            // Skip if this was already captured as a diff block
+            if (response.Substring(Math.Max(0, match.Index - 5), Math.Min(8, match.Index + 8)).Contains("diff"))
+                continue;
+
+            // Only create patches for C#-looking code (has class, void, using, {, etc.)
+            if (!LooksLikeCSharp(code)) continue;
 
             // Try to find a file path mentioned near this code block
             var filePath = FindFilePathNearCodeBlock(response, match.Index, projectPath);
@@ -395,6 +406,16 @@ Pour modifier du code, utilise l'outil patch avec :
         }
 
         return patches;
+    }
+
+    /// <summary>
+    /// Checks if a code block looks like C# (to avoid creating patches for JSON, YAML, etc.)
+    /// </summary>
+    private bool LooksLikeCSharp(string code)
+    {
+        var indicators = new[] { "class ", "void ", "public ", "private ", "using ", "namespace ", "var ", "return ", "if (", "foreach ", "async ", "=> ", "new ", ".cs" };
+        var count = indicators.Count(i => code.Contains(i));
+        return count >= 1;
     }
 
     /// <summary>
@@ -530,6 +551,10 @@ Pour modifier du code, utilise l'outil patch avec :
         var iterations = 0;
         var maxIterations = 8;
 
+        // Accumulate ALL LLM responses to extract patches from any of them
+        var allResponsesAccumulator = new StringBuilder();
+        allResponsesAccumulator.AppendLine(llmResponse);
+
         // Extract the LLM's reasoning text BEFORE the tool call JSON and emit it as real thinking
         var thinkingText = ExtractThinkingFromResponse(llmResponse);
         if (!string.IsNullOrWhiteSpace(thinkingText))
@@ -592,6 +617,7 @@ Pour modifier du code, utilise l'outil patch avec :
                 cancellationToken);
 
             toolCall = ParseToolCall(llmResponse);
+            allResponsesAccumulator.AppendLine(llmResponse);
 
             // Extract the LLM's REAL thinking from this iteration
             thinkingText = ExtractThinkingFromResponse(llmResponse);
@@ -606,17 +632,28 @@ Pour modifier du code, utilise l'outil patch avec :
             }
         }
 
-        // Clean up final response
+        // Clean up final response (for display)
         var finalContent = CleanToolCallsFromResponse(llmResponse);
 
-        // Extract patches
-        var patches = ExtractPatchesFromResponse(finalContent, context.ProjectPath);
-        if (patches.Any() && _patchService != null)
+        // Extract patches from ALL accumulated LLM responses (not just the last one)
+        var allResponses = allResponsesAccumulator.ToString();
+        Logger.LogInformation("Extracting patches from {Length} chars of accumulated responses", allResponses.Length);
+        var patches = ExtractPatchesFromResponse(allResponses, context.ProjectPath);
+        Logger.LogInformation("Extracted {Count} patches from response", patches.Count);
+
+        if (patches.Any())
         {
-            foreach (var patch in patches)
+            if (_patchService != null)
             {
-                _patchService.AddPendingPatch(patch);
-                Logger.LogInformation("Patch added to pending: {FilePath}", patch.FilePath);
+                foreach (var patch in patches)
+                {
+                    _patchService.AddPendingPatch(patch);
+                    Logger.LogInformation("Patch added to pending: {FilePath} (ID: {Id})", patch.FilePath, patch.Id);
+                }
+            }
+            else
+            {
+                Logger.LogWarning("PatchService is null — cannot add patches to pending");
             }
 
             yield return new AgentStreamEvent
