@@ -356,11 +356,11 @@ Pour modifier du code, utilise l'outil patch avec :
     {
         var patches = new List<FilePatch>();
 
-        // Look for diff blocks
+        // 1. Look for ```diff blocks with proper headers
         var diffPattern = @"```diff\s*([\s\S]*?)```";
-        var matches = Regex.Matches(response, diffPattern);
+        var diffMatches = Regex.Matches(response, diffPattern);
 
-        foreach (Match match in matches)
+        foreach (Match match in diffMatches)
         {
             var diffContent = match.Groups[1].Value.Trim();
             var patch = ParseDiffToPatch(diffContent, projectPath);
@@ -370,32 +370,80 @@ Pour modifier du code, utilise l'outil patch avec :
             }
         }
 
-        // Also look for new file blocks
-        var newFilePattern = @"```csharp\s*//\s*(?:File|Fichier|Path):\s*([^\n]+)\s*([\s\S]*?)```";
-        var newFileMatches = Regex.Matches(response, newFilePattern, RegexOptions.IgnoreCase);
+        // 2. Look for ALL ```csharp blocks (the main way LLMs output code)
+        var csharpPattern = @"```csharp\s*([\s\S]*?)```";
+        var csharpMatches = Regex.Matches(response, csharpPattern);
 
-        foreach (Match match in newFileMatches)
+        foreach (Match match in csharpMatches)
         {
-            var filePath = match.Groups[1].Value.Trim();
-            var content = match.Groups[2].Value.Trim();
+            var code = match.Groups[1].Value.Trim();
+            if (string.IsNullOrEmpty(code) || code.Length < 20) continue;
 
-            if (!string.IsNullOrEmpty(filePath) && !string.IsNullOrEmpty(content))
+            // Try to find a file path mentioned near this code block
+            var filePath = FindFilePathNearCodeBlock(response, match.Index, projectPath);
+
+            patches.Add(new FilePatch
             {
-                patches.Add(new FilePatch
-                {
-                    Id = Guid.NewGuid().ToString(),
-                    FilePath = NormalizePath(projectPath ?? "", filePath),
-                    Status = PatchStatus.Pending,
-                    ModifiedContent = content,
-                    OriginalContent = "",
-                    UnifiedDiff = $"--- /dev/null\n+++ b/{filePath}\n@@ -0,0 +1,{content.Split('\n').Length} @@\n" +
-                                  string.Join("\n", content.Split('\n').Select(l => $"+{l}")),
-                    CreatedAt = DateTime.UtcNow
-                });
-            }
+                Id = Guid.NewGuid().ToString(),
+                FilePath = !string.IsNullOrEmpty(filePath) ? filePath : "code_suggestion.cs",
+                Status = PatchStatus.Pending,
+                ModifiedContent = code,
+                OriginalContent = "",
+                UnifiedDiff = GenerateSimpleDiff(filePath ?? "code_suggestion.cs", code),
+                CreatedAt = DateTime.UtcNow
+            });
         }
 
         return patches;
+    }
+
+    /// <summary>
+    /// Searches the text surrounding a code block for a file path reference.
+    /// Looks for patterns like "dans NetworkDoor.cs", "fichier Interactor.cs", "Assets/Scripts/..."
+    /// </summary>
+    private string? FindFilePathNearCodeBlock(string response, int codeBlockIndex, string? projectPath)
+    {
+        // Look at the 500 chars before the code block for a file reference
+        var searchStart = Math.Max(0, codeBlockIndex - 500);
+        var contextBefore = response.Substring(searchStart, codeBlockIndex - searchStart);
+
+        // Pattern 1: explicit path like Assets/Scripts/Foo/Bar.cs
+        var pathMatch = Regex.Match(contextBefore, @"(Assets/[^\s\n`""]+\.cs)", RegexOptions.RightToLeft);
+        if (pathMatch.Success)
+        {
+            var relPath = pathMatch.Groups[1].Value;
+            return !string.IsNullOrEmpty(projectPath) ? NormalizePath(projectPath, relPath) : relPath;
+        }
+
+        // Pattern 2: FileName.cs mentioned (e.g., "dans NetworkDoor.cs", "le fichier Interactor.cs")
+        var fileNameMatch = Regex.Match(contextBefore, @"(\w+\.cs)\b", RegexOptions.RightToLeft);
+        if (fileNameMatch.Success && !string.IsNullOrEmpty(projectPath))
+        {
+            var fileName = fileNameMatch.Groups[1].Value;
+            // Search for this file in the project
+            try
+            {
+                var found = Directory.GetFiles(projectPath, fileName, SearchOption.AllDirectories).FirstOrDefault();
+                if (found != null) return found;
+            }
+            catch { }
+            return fileName;
+        }
+
+        return null;
+    }
+
+    private string GenerateSimpleDiff(string filePath, string code)
+    {
+        var fileName = Path.GetFileName(filePath);
+        var lines = code.Split('\n');
+        var sb = new StringBuilder();
+        sb.AppendLine($"--- a/{fileName}");
+        sb.AppendLine($"+++ b/{fileName}");
+        sb.AppendLine($"@@ -0,0 +1,{lines.Length} @@");
+        foreach (var line in lines)
+            sb.AppendLine($"+{line}");
+        return sb.ToString();
     }
 
     private FilePatch? ParseDiffToPatch(string diffContent, string? projectPath)

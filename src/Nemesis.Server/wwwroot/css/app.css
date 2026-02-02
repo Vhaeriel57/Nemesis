@@ -1885,31 +1885,17 @@ details summary:hover {
     color: var(--accent-primary);
 }
 
-/* Syntax Highlighting Colors */
-.code-block .language-csharp .keyword,
-.code-block code .keyword {
-    color: #c586c0;
-}
-
-.code-block .language-csharp .type,
-.code-block code .type {
-    color: #4ec9b0;
-}
-
-.code-block .language-csharp .string,
-.code-block code .string {
-    color: #ce9178;
-}
-
-.code-block .language-csharp .comment,
-.code-block code .comment {
-    color: #6a9955;
-}
-
-.code-block .language-csharp .number,
-.code-block code .number {
-    color: #b5cea8;
-}
+/* Server-side Syntax Highlighting Colors (no Prism.js — Blazor compatible) */
+.hl-keyword { color: #c586c0; }
+.hl-type { color: #4ec9b0; }
+.hl-string { color: #ce9178; }
+.hl-comment { color: #6a9955; font-style: italic; }
+.hl-number { color: #b5cea8; }
+.hl-preprocessor { color: #808080; }
+.hl-attribute { color: #9cdcfe; }
+.hl-diff-add { color: #4ec9b0; background: rgba(78, 201, 176, 0.1); display: inline-block; width: 100%; }
+.hl-diff-del { color: #f44747; background: rgba(244, 71, 71, 0.1); display: inline-block; width: 100%; }
+.hl-diff-hunk { color: #569cd6; }
 
 /* Chat Input Area Update */
 .chat-input-area {
