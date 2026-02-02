@@ -200,6 +200,13 @@ Fais au moins UNE recherche `web_search` par demande.
 
         // Clean up any remaining tool call JSON from final response
         response.Content = CleanToolCallsFromResponse(llmResponse);
+        if (string.IsNullOrWhiteSpace(response.Content))
+        {
+            Logger.LogWarning("CleanToolCallsFromResponse stripped entire response — recovering");
+            response.Content = CleanToolCallsFromResponse(allResponsesAccumulator.ToString());
+            if (string.IsNullOrWhiteSpace(response.Content))
+                response.Content = allResponsesAccumulator.ToString();
+        }
 
         // Extract patches from ALL accumulated LLM responses
         var allResponses = allResponsesAccumulator.ToString();
@@ -685,6 +692,24 @@ Fais au moins UNE recherche `web_search` par demande.
 
         // Clean up final response (for display)
         var finalContent = CleanToolCallsFromResponse(llmResponse);
+        Logger.LogInformation("Raw LLM response ({Length} chars): {Response}", llmResponse.Length, llmResponse.Substring(0, Math.Min(500, llmResponse.Length)));
+        Logger.LogInformation("After cleanup ({Length} chars): {Content}", finalContent.Length, finalContent.Substring(0, Math.Min(500, finalContent.Length)));
+
+        // If cleanup stripped everything, try to recover from accumulated responses
+        if (string.IsNullOrWhiteSpace(finalContent))
+        {
+            Logger.LogWarning("CleanToolCallsFromResponse stripped entire response — recovering from accumulated text");
+            // Use all the thinking text that was extracted during the loop
+            var allResponses = allResponsesAccumulator.ToString();
+            finalContent = CleanToolCallsFromResponse(allResponses);
+
+            // If still empty, just use the raw response without cleaning
+            if (string.IsNullOrWhiteSpace(finalContent))
+            {
+                Logger.LogWarning("Recovery also empty — using raw accumulated responses");
+                finalContent = allResponses;
+            }
+        }
 
         // If we hit the iteration limit, append a continuation hint
         if (hitIterationLimit)
