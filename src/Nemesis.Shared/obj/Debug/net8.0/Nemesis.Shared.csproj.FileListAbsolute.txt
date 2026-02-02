@@ -1,12 +1,5 @@
-C:\Users\maxim\Nemesis\src\Nemesis.Shared\bin\Debug\net8.0\Nemesis.Shared.deps.json
-C:\Users\maxim\Nemesis\src\Nemesis.Shared\bin\Debug\net8.0\Nemesis.Shared.dll
-C:\Users\maxim\Nemesis\src\Nemesis.Shared\bin\Debug\net8.0\Nemesis.Shared.pdb
 C:\Users\maxim\Nemesis\src\Nemesis.Shared\obj\Debug\net8.0\Nemesis.Shared.GeneratedMSBuildEditorConfig.editorconfig
 C:\Users\maxim\Nemesis\src\Nemesis.Shared\obj\Debug\net8.0\Nemesis.Shared.AssemblyInfoInputs.cache
 C:\Users\maxim\Nemesis\src\Nemesis.Shared\obj\Debug\net8.0\Nemesis.Shared.AssemblyInfo.cs
 C:\Users\maxim\Nemesis\src\Nemesis.Shared\obj\Debug\net8.0\Nemesis.Shared.csproj.CoreCompileInputs.cache
 C:\Users\maxim\Nemesis\src\Nemesis.Shared\obj\Debug\net8.0\Nemesis.Shared.sourcelink.json
-C:\Users\maxim\Nemesis\src\Nemesis.Shared\obj\Debug\net8.0\Nemesis.Shared.dll
-C:\Users\maxim\Nemesis\src\Nemesis.Shared\obj\Debug\net8.0\refint\Nemesis.Shared.dll
-C:\Users\maxim\Nemesis\src\Nemesis.Shared\obj\Debug\net8.0\Nemesis.Shared.pdb
-C:\Users\maxim\Nemesis\src\Nemesis.Shared\obj\Debug\net8.0\ref\Nemesis.Shared.dll
