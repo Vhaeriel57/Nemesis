@@ -14,6 +14,7 @@ public class AgentOrchestrator
     private readonly Dictionary<AgentType, IAgent> _agents;
     private readonly CodeIndexer _codeIndexer;
     private readonly RagService _ragService;
+    private readonly Services.ProjectKnowledgeService _knowledgeService;
     private readonly ILogger<AgentOrchestrator> _logger;
 
     private readonly Dictionary<string, List<ChatMessage>> _chatHistories = new();
@@ -31,11 +32,13 @@ public class AgentOrchestrator
         IEnumerable<IAgent> agents,
         CodeIndexer codeIndexer,
         RagService ragService,
+        Services.ProjectKnowledgeService knowledgeService,
         ILogger<AgentOrchestrator> logger)
     {
         _agents = agents.ToDictionary(a => a.Type, a => a);
         _codeIndexer = codeIndexer;
         _ragService = ragService;
+        _knowledgeService = knowledgeService;
         _logger = logger;
     }
 
@@ -120,6 +123,7 @@ public class AgentOrchestrator
         var context = await BuildContextAsync(message, history, cancellationToken);
 
         var fullResponse = new System.Text.StringBuilder();
+        string? workingMemory = null;
 
         await foreach (var evt in agent.ProcessStreamAsync(message, context, cancellationToken))
         {
@@ -127,12 +131,30 @@ public class AgentOrchestrator
             {
                 fullResponse.Append(evt.Content);
             }
+            else if (evt.Type == AgentStreamEventType.WorkingMemory && evt.Content != null)
+            {
+                workingMemory = evt.Content;
+                // Don't yield WorkingMemory events to the UI
+                continue;
+            }
             yield return evt;
         }
 
         // Update history
         history.Add(new ChatMessage { Role = "user", Content = message, AgentType = agentType.ToString() });
         history.Add(new ChatMessage { Role = "assistant", Content = fullResponse.ToString(), AgentType = agentType.ToString() });
+
+        // Save working memory so "continue" picks up context
+        if (!string.IsNullOrEmpty(workingMemory))
+        {
+            history.Add(new ChatMessage
+            {
+                Role = "system",
+                Content = workingMemory,
+                AgentType = agentType.ToString(),
+                Metadata = new Dictionary<string, object> { ["type"] = "working_memory" }
+            });
+        }
     }
 
     private async Task<AgentContext> BuildContextAsync(
@@ -145,6 +167,24 @@ public class AgentOrchestrator
             ProjectPath = _codeIndexer.CurrentProjectPath ?? "",
             ChatHistory = history.TakeLast(20).ToList()
         };
+
+        // Inject project knowledge map if available
+        if (_knowledgeService.IsLoaded)
+        {
+            // Always include the project map (architecture overview)
+            var projectMap = _knowledgeService.GetProjectMap();
+            if (!string.IsNullOrEmpty(projectMap))
+            {
+                context.Metadata["project_map"] = projectMap;
+            }
+
+            // Include smart context relevant to the user's message
+            var smartContext = _knowledgeService.GetSmartContext(message, maxChars: 6000);
+            if (!string.IsNullOrEmpty(smartContext))
+            {
+                context.Metadata["smart_context"] = smartContext;
+            }
+        }
 
         // Detect if this is a general project question
         var isGeneralProjectQuestion = IsGeneralProjectQuestion(message);
