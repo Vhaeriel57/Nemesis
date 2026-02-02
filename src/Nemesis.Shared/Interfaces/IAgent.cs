@@ -66,7 +66,8 @@ public enum AgentStreamEventType
     AgentThinking,     // Agent is processing
     Delegation,        // Manager delegating to another agent
     AgentResponse,     // Sub-agent responding
-    Synthesis          // Manager synthesizing responses
+    Synthesis,         // Manager synthesizing responses
+    WorkingMemory      // Agent's accumulated context from tool calls (for continuation)
 }
 
 public class CodeSymbolInfo

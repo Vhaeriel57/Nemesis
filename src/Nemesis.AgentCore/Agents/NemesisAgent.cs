@@ -276,13 +276,26 @@ Pour modifier du code, utilise l'outil patch avec :
     {
         var messages = new List<ChatMessage>();
 
-        foreach (var msg in history.TakeLast(10))
+        foreach (var msg in history.TakeLast(20))
         {
-            messages.Add(new ChatMessage
+            // Working memory from previous exchanges gets injected as a user context message
+            if (msg.Role == "system" && msg.Metadata?.ContainsKey("type") == true
+                && msg.Metadata["type"]?.ToString() == "working_memory")
             {
-                Role = msg.Role,
-                Content = msg.Content
-            });
+                messages.Add(new ChatMessage
+                {
+                    Role = "user",
+                    Content = msg.Content
+                });
+            }
+            else
+            {
+                messages.Add(new ChatMessage
+                {
+                    Role = msg.Role,
+                    Content = msg.Content
+                });
+            }
         }
 
         messages.Add(new ChatMessage
@@ -678,8 +691,30 @@ Pour modifier du code, utilise l'outil patch avec :
             }
         }
 
+        // Build working memory from all tool calls for continuation support
+        var workingMemory = BuildWorkingMemory(toolCalls);
+        var hitIterationLimit = toolCall != null && iterations >= maxIterations;
+
+        // Emit working memory so orchestrator can save it in chat history
+        if (!string.IsNullOrEmpty(workingMemory))
+        {
+            yield return new AgentStreamEvent
+            {
+                Type = AgentStreamEventType.WorkingMemory,
+                Content = workingMemory,
+                AgentType = AgentType.Manager
+            };
+        }
+
         // Clean up final response (for display)
         var finalContent = CleanToolCallsFromResponse(llmResponse);
+
+        // If we hit the iteration limit, append a continuation hint
+        if (hitIterationLimit)
+        {
+            finalContent += "\n\n---\n⚠️ J'ai atteint ma limite d'itérations. Dis **\"continue\"** et je reprendrai exactement où j'en étais, avec tout le contexte de mes recherches.";
+            Logger.LogWarning("Hit iteration limit ({Max}). Working memory saved for continuation.", maxIterations);
+        }
 
         // Extract patches from ALL accumulated LLM responses (not just the last one)
         var allResponses = allResponsesAccumulator.ToString();
@@ -755,6 +790,89 @@ Pour modifier du code, utilise l'outil patch avec :
             thinking = thinking.Substring(0, 500) + "...";
 
         return thinking;
+    }
+
+    /// <summary>
+    /// Builds a compact summary of what the agent discovered during its tool calls.
+    /// This gets saved in chat history so "continue" messages have full context.
+    /// </summary>
+    private string BuildWorkingMemory(List<ToolCall> toolCalls)
+    {
+        if (!toolCalls.Any()) return "";
+
+        var sb = new StringBuilder();
+        sb.AppendLine("[MÉMOIRE DE TRAVAIL — Contexte accumulé par l'agent lors de l'échange précédent]");
+        sb.AppendLine();
+
+        foreach (var tc in toolCalls)
+        {
+            var toolName = tc.Name ?? "unknown";
+            var result = tc.Result ?? "";
+
+            // Truncate long results but keep enough context
+            if (result.Length > 2000)
+                result = result.Substring(0, 2000) + "\n... (tronqué)";
+
+            try
+            {
+                var args = !string.IsNullOrEmpty(tc.Arguments)
+                    ? System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(tc.Arguments) ?? new()
+                    : new();
+
+                switch (toolName.ToLower())
+                {
+                    case "file_system":
+                        var action = args.GetValueOrDefault("action")?.ToString() ?? "";
+                        var path = args.GetValueOrDefault("path")?.ToString() ?? args.GetValueOrDefault("file_path")?.ToString() ?? "";
+                        if (action == "read_file")
+                        {
+                            sb.AppendLine($"### Fichier lu : `{Path.GetFileName(path)}`");
+                            sb.AppendLine($"Chemin: `{path}`");
+                            sb.AppendLine("```csharp");
+                            sb.AppendLine(result);
+                            sb.AppendLine("```");
+                        }
+                        else
+                        {
+                            sb.AppendLine($"### {action} : `{path}`");
+                            sb.AppendLine(result);
+                        }
+                        break;
+
+                    case "code_index":
+                        var query = args.GetValueOrDefault("query")?.ToString() ?? "";
+                        sb.AppendLine($"### Recherche code : `{query}`");
+                        sb.AppendLine(result);
+                        break;
+
+                    case "web_search":
+                        var searchQuery = args.GetValueOrDefault("query")?.ToString() ?? "";
+                        sb.AppendLine($"### Recherche web : `{searchQuery}`");
+                        sb.AppendLine(result);
+                        break;
+
+                    case "patch":
+                        sb.AppendLine($"### Patch créé");
+                        var filePath = args.GetValueOrDefault("file_path")?.ToString() ?? "";
+                        sb.AppendLine($"Fichier: `{filePath}`");
+                        break;
+
+                    default:
+                        sb.AppendLine($"### Outil `{toolName}`");
+                        sb.AppendLine(result);
+                        break;
+                }
+                sb.AppendLine();
+            }
+            catch
+            {
+                sb.AppendLine($"### Outil `{toolName}` — résultat disponible");
+                sb.AppendLine();
+            }
+        }
+
+        sb.AppendLine("[FIN MÉMOIRE DE TRAVAIL]");
+        return sb.ToString();
     }
 
     private string GetDetailedToolStatus(ToolCall toolCall)

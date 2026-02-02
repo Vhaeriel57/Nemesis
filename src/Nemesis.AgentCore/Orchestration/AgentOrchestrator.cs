@@ -120,6 +120,7 @@ public class AgentOrchestrator
         var context = await BuildContextAsync(message, history, cancellationToken);
 
         var fullResponse = new System.Text.StringBuilder();
+        string? workingMemory = null;
 
         await foreach (var evt in agent.ProcessStreamAsync(message, context, cancellationToken))
         {
@@ -127,12 +128,30 @@ public class AgentOrchestrator
             {
                 fullResponse.Append(evt.Content);
             }
+            else if (evt.Type == AgentStreamEventType.WorkingMemory && evt.Content != null)
+            {
+                workingMemory = evt.Content;
+                // Don't yield WorkingMemory events to the UI
+                continue;
+            }
             yield return evt;
         }
 
         // Update history
         history.Add(new ChatMessage { Role = "user", Content = message, AgentType = agentType.ToString() });
         history.Add(new ChatMessage { Role = "assistant", Content = fullResponse.ToString(), AgentType = agentType.ToString() });
+
+        // Save working memory so "continue" picks up context
+        if (!string.IsNullOrEmpty(workingMemory))
+        {
+            history.Add(new ChatMessage
+            {
+                Role = "system",
+                Content = workingMemory,
+                AgentType = agentType.ToString(),
+                Metadata = new Dictionary<string, object> { ["type"] = "working_memory" }
+            });
+        }
     }
 
     private async Task<AgentContext> BuildContextAsync(
