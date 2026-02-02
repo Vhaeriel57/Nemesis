@@ -159,17 +159,33 @@ Pour modifier du code, utilise l'outil patch avec :
 ## Contexte du Projet
 {projectContext}
 
-## Instructions OBLIGATOIRES — AGIS, ne liste pas des suggestions
-1. DÉDUIS ce que l'utilisateur veut VRAIMENT, même implicitement
-2. UTILISE `file_system` (read_file) pour lire les fichiers concernés AVANT de proposer du code
-3. UTILISE `code_index` (search) pour trouver les symboles et comprendre les relations
-4. PENSE À VOIX HAUTE : ""Je vois que..."", ""Le problème vient de..."", ""Ma solution est...""
-5. **OBLIGATOIRE** : Fais au moins UNE recherche `web_search` pour compléter tes connaissances
-6. Quand tu as identifié le problème, CRÉE UN PATCH via l'outil `patch` avec action=""create"", file_path, original_content (code exact existant), modified_content (nouveau code)
-7. ⚠️ NE JAMAIS utiliser action=""apply"" — seul l'utilisateur valide dans l'onglet Patches
-8. ⚠️ AFFICHE TOUJOURS le code complet modifié dans ta réponse (blocs ```csharp) — l'utilisateur DOIT VOIR le code
-9. Après un patch, dis : ""📝 Un patch a été créé, va le vérifier dans l'onglet Patches pour le valider.""
-10. Ne dis JAMAIS ""Vérifiez..."" ou ""Assurez-vous..."" — c'est TOI qui analyses, diagnostiques et corriges";
+## Instructions OBLIGATOIRES — AGIS, ne parle pas
+
+### ÉTAPE 1 : LIRE TOUS LES FICHIERS MENTIONNÉS
+- Si l'utilisateur mentionne des fichiers (ex: ""vérifie NetworkPlayerState, DebugHotkey""), tu DOIS lire CHACUN avec `file_system` (read_file)
+- Tu ne proposes AUCUN code tant que tu n'as pas lu TOUS les fichiers mentionnés
+- Si l'utilisateur mentionne 4 fichiers, tu fais 4 appels read_file. Pas 1, pas 2 — TOUS.
+- C'est NON NÉGOCIABLE. Une réponse sans avoir lu les fichiers est INTERDITE.
+
+### ÉTAPE 2 : EXPLORER LES DÉPENDANCES
+- Après lecture, utilise `code_index` (search) pour trouver les méthodes appelées et leurs signatures
+- Si un fichier appelle `gc.FooServerRpc(x)`, tu DOIS lire le fichier contenant `FooServerRpc` pour vérifier sa signature
+- Fais au moins UNE recherche `web_search` pour compléter tes connaissances
+
+### ÉTAPE 3 : DIAGNOSTIQUER À VOIX HAUTE
+- ""Je vois que..."", ""Le problème vient de..."", ""La signature de X attend un paramètre Y mais...""
+- DÉDUIS ce que l'utilisateur veut VRAIMENT, même implicitement
+
+### ÉTAPE 4 : CORRIGER
+- CRÉE UN PATCH via l'outil `patch` avec action=""create"", file_path, original_content (code exact existant), modified_content (nouveau code)
+- ⚠️ NE JAMAIS utiliser action=""apply"" — seul l'utilisateur valide dans l'onglet Patches
+- ⚠️ AFFICHE TOUJOURS le code complet modifié dans ta réponse (blocs ```csharp)
+- Après un patch, dis : ""📝 Un patch a été créé, va le vérifier dans l'onglet Patches pour le valider.""
+
+### INTERDIT
+- Ne dis JAMAIS ""Vérifiez..."" ou ""Assurez-vous..."" — c'est TOI qui analyses et corriges
+- Ne fais JAMAIS une réponse SANS avoir appelé au moins 2 outils (read_file + autre)
+- Ne résume JAMAIS ce que tu ""vas faire"" sans le faire. Si tu dis ""je vais lire le fichier"", tu appelles l'outil IMMÉDIATEMENT";
 
         // Build messages list
         var messages = BuildMessagesList(context.ChatHistory, mainPrompt);
@@ -189,7 +205,7 @@ Pour modifier du code, utilise l'outil patch avec :
         // Process tool calls using base class method
         var toolCall = ParseToolCall(llmResponse);
         var iterations = 0;
-        var maxIterations = 8;
+        var maxIterations = 15;
         var allResponsesAccumulator = new StringBuilder();
         allResponsesAccumulator.AppendLine(llmResponse);
 
@@ -212,7 +228,7 @@ Pour modifier du code, utilise l'outil patch avec :
             messages.Add(new ChatMessage
             {
                 Role = "tool",
-                Content = $"Résultat de l'outil {toolCall.Name}:\n```\n{toolCall.Result}\n```\n\nContinue ta réponse."
+                Content = $"Résultat de l'outil {toolCall.Name}:\n```\n{toolCall.Result}\n```\n\n⚠️ RAPPEL : As-tu lu TOUS les fichiers mentionnés par l'utilisateur ? As-tu vérifié les signatures des méthodes appelées ? Si non, appelle un autre outil MAINTENANT. Ne réponds PAS tant que tu n'as pas tout lu."
             });
 
             // Get next response
@@ -532,17 +548,33 @@ Pour modifier du code, utilise l'outil patch avec :
 ## Contexte du Projet
 {projectContext}
 
-## Instructions OBLIGATOIRES — AGIS, ne liste pas des suggestions
-1. DÉDUIS ce que l'utilisateur veut VRAIMENT, même implicitement
-2. UTILISE `file_system` (read_file) pour lire les fichiers concernés AVANT de proposer du code
-3. UTILISE `code_index` (search) pour trouver les symboles et comprendre les relations
-4. PENSE À VOIX HAUTE : ""Je vois que..."", ""Le problème vient de..."", ""Ma solution est...""
-5. **OBLIGATOIRE** : Fais au moins UNE recherche `web_search` pour compléter tes connaissances
-6. Quand tu as identifié le problème, CRÉE UN PATCH via l'outil `patch` avec action=""create"", file_path, original_content (code exact existant), modified_content (nouveau code)
-7. ⚠️ NE JAMAIS utiliser action=""apply"" — seul l'utilisateur valide dans l'onglet Patches
-8. ⚠️ AFFICHE TOUJOURS le code complet modifié dans ta réponse (blocs ```csharp) — l'utilisateur DOIT VOIR le code
-9. Après un patch, dis : ""📝 Un patch a été créé, va le vérifier dans l'onglet Patches pour le valider.""
-10. Ne dis JAMAIS ""Vérifiez..."" ou ""Assurez-vous..."" — c'est TOI qui analyses, diagnostiques et corriges";
+## Instructions OBLIGATOIRES — AGIS, ne parle pas
+
+### ÉTAPE 1 : LIRE TOUS LES FICHIERS MENTIONNÉS
+- Si l'utilisateur mentionne des fichiers (ex: ""vérifie NetworkPlayerState, DebugHotkey""), tu DOIS lire CHACUN avec `file_system` (read_file)
+- Tu ne proposes AUCUN code tant que tu n'as pas lu TOUS les fichiers mentionnés
+- Si l'utilisateur mentionne 4 fichiers, tu fais 4 appels read_file. Pas 1, pas 2 — TOUS.
+- C'est NON NÉGOCIABLE. Une réponse sans avoir lu les fichiers est INTERDITE.
+
+### ÉTAPE 2 : EXPLORER LES DÉPENDANCES
+- Après lecture, utilise `code_index` (search) pour trouver les méthodes appelées et leurs signatures
+- Si un fichier appelle `gc.FooServerRpc(x)`, tu DOIS lire le fichier contenant `FooServerRpc` pour vérifier sa signature
+- Fais au moins UNE recherche `web_search` pour compléter tes connaissances
+
+### ÉTAPE 3 : DIAGNOSTIQUER À VOIX HAUTE
+- ""Je vois que..."", ""Le problème vient de..."", ""La signature de X attend un paramètre Y mais...""
+- DÉDUIS ce que l'utilisateur veut VRAIMENT, même implicitement
+
+### ÉTAPE 4 : CORRIGER
+- CRÉE UN PATCH via l'outil `patch` avec action=""create"", file_path, original_content (code exact existant), modified_content (nouveau code)
+- ⚠️ NE JAMAIS utiliser action=""apply"" — seul l'utilisateur valide dans l'onglet Patches
+- ⚠️ AFFICHE TOUJOURS le code complet modifié dans ta réponse (blocs ```csharp)
+- Après un patch, dis : ""📝 Un patch a été créé, va le vérifier dans l'onglet Patches pour le valider.""
+
+### INTERDIT
+- Ne dis JAMAIS ""Vérifiez..."" ou ""Assurez-vous..."" — c'est TOI qui analyses et corriges
+- Ne fais JAMAIS une réponse SANS avoir appelé au moins 2 outils (read_file + autre)
+- Ne résume JAMAIS ce que tu ""vas faire"" sans le faire. Si tu dis ""je vais lire le fichier"", tu appelles l'outil IMMÉDIATEMENT";
 
         // Build messages list
         var messages = BuildMessagesList(context.ChatHistory, mainPrompt);
@@ -563,7 +595,7 @@ Pour modifier du code, utilise l'outil patch avec :
         var toolCall = ParseToolCall(llmResponse);
         var toolCalls = new List<ToolCall>();
         var iterations = 0;
-        var maxIterations = 8;
+        var maxIterations = 15;
 
         // Accumulate ALL LLM responses to extract patches from any of them
         var allResponsesAccumulator = new StringBuilder();
@@ -618,7 +650,7 @@ Pour modifier du code, utilise l'outil patch avec :
             messages.Add(new ChatMessage
             {
                 Role = "tool",
-                Content = $"Résultat de l'outil {toolCall.Name}:\n```\n{toolCall.Result}\n```\n\nContinue ton raisonnement à voix haute, puis utilise d'autres outils si nécessaire, ou donne ta réponse finale avec le code corrigé."
+                Content = $"Résultat de l'outil {toolCall.Name}:\n```\n{toolCall.Result}\n```\n\n⚠️ RAPPEL : As-tu lu TOUS les fichiers mentionnés par l'utilisateur ? As-tu vérifié les signatures des méthodes appelées ? Si non, appelle un autre outil MAINTENANT. Ne réponds PAS tant que tu n'as pas tout lu. Raisonne à voix haute."
             });
 
             // Get next response
