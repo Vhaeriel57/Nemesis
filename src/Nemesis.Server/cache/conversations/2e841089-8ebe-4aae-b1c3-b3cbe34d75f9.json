@@ -1,0 +1,38 @@
+{
+  "Id": "2e841089-8ebe-4aae-b1c3-b3cbe34d75f9",
+  "Title": "Je suis sur unity 6\nQuand je suis d\u00E9sign\u00E9 comme po...",
+  "CreatedAt": "2026-02-02T18:58:36.6807901Z",
+  "UpdatedAt": "2026-02-02T18:59:17.3718698Z",
+  "ProjectPath": "C:\\Users\\maxim\\Possede",
+  "Messages": [
+    {
+      "Id": "72d79a99-a75a-451b-907e-a6f62d49d980",
+      "Timestamp": "2026-02-02T18:58:36.6811787Z",
+      "Sender": {
+        "Type": 0,
+        "AgentType": null,
+        "DisplayName": "You"
+      },
+      "Content": "Je suis sur unity 6\nQuand je suis d\u00E9sign\u00E9 comme poss\u00E9d\u00E9, je veux avoir une \u0022barre de folie\u0022 qui apparait. Elle se remplira par la suite avec divers action",
+      "TargetAgent": null,
+      "ToolCalls": null,
+      "Type": 0,
+      "Metadata": null
+    },
+    {
+      "Id": "2a78b624-cba9-41a7-807b-b46cdf57d85e",
+      "Timestamp": "2026-02-02T18:59:17.3717608Z",
+      "Sender": {
+        "Type": 1,
+        "AgentType": null,
+        "DisplayName": "System"
+      },
+      "Content": "\u0060\u0060\u0060python\n\n}\n\u0060\u0060\u0060",
+      "TargetAgent": null,
+      "ToolCalls": [],
+      "Type": 0,
+      "Metadata": null
+    }
+  ],
+  "Status": 0
+}
