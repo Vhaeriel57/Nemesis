@@ -205,7 +205,7 @@ Pour modifier du code, utilise l'outil patch avec :
         // Process tool calls using base class method
         var toolCall = ParseToolCall(llmResponse);
         var iterations = 0;
-        var maxIterations = 15;
+        var maxIterations = 20;
         var allResponsesAccumulator = new StringBuilder();
         allResponsesAccumulator.AppendLine(llmResponse);
 
@@ -595,7 +595,7 @@ Pour modifier du code, utilise l'outil patch avec :
         var toolCall = ParseToolCall(llmResponse);
         var toolCalls = new List<ToolCall>();
         var iterations = 0;
-        var maxIterations = 15;
+        var maxIterations = 20;
 
         // Accumulate ALL LLM responses to extract patches from any of them
         var allResponsesAccumulator = new StringBuilder();
