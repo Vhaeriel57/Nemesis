@@ -4,6 +4,8 @@ namespace Nemesis.Shared.Interfaces;
 
 public interface IPatchService
 {
+    void AddPendingPatch(FilePatch patch);
+
     FilePatch CreatePatch(string filePath, string originalContent, string modifiedContent);
     PatchSet CreatePatchSet(string description, List<(string filePath, string original, string modified)> changes);
 
