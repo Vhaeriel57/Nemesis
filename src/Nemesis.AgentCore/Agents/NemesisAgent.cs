@@ -700,14 +700,14 @@ Fais au moins UNE recherche `web_search` par demande.
         {
             Logger.LogWarning("CleanToolCallsFromResponse stripped entire response — recovering from accumulated text");
             // Use all the thinking text that was extracted during the loop
-            var allResponses = allResponsesAccumulator.ToString();
-            finalContent = CleanToolCallsFromResponse(allResponses);
+            var accumulated = allResponsesAccumulator.ToString();
+            finalContent = CleanToolCallsFromResponse(accumulated);
 
             // If still empty, just use the raw response without cleaning
             if (string.IsNullOrWhiteSpace(finalContent))
             {
                 Logger.LogWarning("Recovery also empty — using raw accumulated responses");
-                finalContent = allResponses;
+                finalContent = accumulated;
             }
         }
 
