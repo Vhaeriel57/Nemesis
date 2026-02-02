@@ -232,8 +232,6 @@
         {
             await JS.InvokeVoidAsync("initTextareaAutoResize", textareaRef);
         }
-        // Re-apply Prism.js syntax highlighting after every render
-        try { await JS.InvokeVoidAsync("highlightAllCode"); } catch { }
     }
 
     private void CreateNewConversation()
@@ -479,11 +477,10 @@
             m => {
                 var lang = m.Groups[1].Value;
                 var code = m.Groups[2].Value.Trim();
-                // HTML-encode the code content separately
-                var encodedCode = System.Web.HttpUtility.HtmlEncode(code);
-                var langClass = !string.IsNullOrEmpty(lang) ? $"language-{lang}" : "language-csharp";
-                var langLabel = string.IsNullOrEmpty(lang) ? "code" : lang.ToUpper();
-                var block = $"<div class=\"code-block\"><div class=\"code-header\"><span class=\"code-lang\">{langLabel}</span><button class=\"copy-btn\" onclick=\"copyCode(this)\">Copier</button></div><pre class=\"line-numbers\"><code class=\"{langClass}\">{encodedCode}</code></pre></div>";
+                var langLabel = string.IsNullOrEmpty(lang) ? "CODE" : lang.ToUpper();
+                // Server-side syntax highlighting (no Prism.js — avoids Blazor DOM conflicts)
+                var highlightedCode = HighlightCSharp(code, lang);
+                var block = $"<div class=\"code-block\"><div class=\"code-header\"><span class=\"code-lang\">{langLabel}</span><button class=\"copy-btn\" onclick=\"copyCode(this)\">Copier</button></div><pre><code>{highlightedCode}</code></pre></div>";
                 var placeholder = $"%%CODEBLOCK_{codeBlocks.Count}%%";
                 codeBlocks.Add(block);
                 return placeholder;
@@ -501,12 +498,10 @@
                 return placeholder;
             });
 
-        // Step 3: Now HTML-encode the rest
+        // Step 3: HTML-encode the rest (text outside code blocks)
         content = System.Web.HttpUtility.HtmlEncode(content);
 
-        // Step 4 (code blocks restored AFTER newline→<br> in step 7)
-
-        // Step 5: Format markdown (bold, italic, headers, lists)
+        // Step 4: Format markdown (bold, italic, headers, lists)
         content = System.Text.RegularExpressions.Regex.Replace(
             content, @"\*\*([^*]+)\*\*", "<strong>$1</strong>");
         content = System.Text.RegularExpressions.Regex.Replace(
@@ -521,15 +516,102 @@
             content, @"^- (.+)$", "<li>$1</li>",
             System.Text.RegularExpressions.RegexOptions.Multiline);
 
-        // Step 6: Newlines to <br> BEFORE restoring code blocks (so <pre> content is not affected)
+        // Step 5: Newlines to <br> BEFORE restoring code blocks
         content = content.Replace("\n", "<br>");
 
-        // Step 7: Restore code blocks AFTER <br> replacement (code blocks use <pre> which handles newlines natively)
+        // Step 6: Restore code blocks and inline code AFTER <br> replacement
         for (int i = 0; i < codeBlocks.Count; i++)
             content = content.Replace($"%%CODEBLOCK_{i}%%", codeBlocks[i]);
         for (int i = 0; i < inlineBlocks.Count; i++)
             content = content.Replace($"%%INLINE_{i}%%", inlineBlocks[i]);
 
         return content;
+    }
+
+    /// <summary>
+    /// Server-side syntax highlighting for C# and diff code.
+    /// Produces stable HTML that works with Blazor's DOM diffing (unlike Prism.js).
+    /// </summary>
+    private string HighlightCSharp(string code, string lang)
+    {
+        // HTML-encode first to prevent XSS
+        var encoded = System.Web.HttpUtility.HtmlEncode(code);
+
+        if (lang == "diff")
+        {
+            // Diff highlighting: color added/removed lines
+            var lines = encoded.Split('\n');
+            var sb = new System.Text.StringBuilder();
+            foreach (var line in lines)
+            {
+                if (line.StartsWith("+") && !line.StartsWith("+++"))
+                    sb.AppendLine($"<span class=\"hl-diff-add\">{line}</span>");
+                else if (line.StartsWith("-") && !line.StartsWith("---"))
+                    sb.AppendLine($"<span class=\"hl-diff-del\">{line}</span>");
+                else if (line.StartsWith("@@"))
+                    sb.AppendLine($"<span class=\"hl-diff-hunk\">{line}</span>");
+                else
+                    sb.AppendLine(line);
+            }
+            return sb.ToString().TrimEnd();
+        }
+
+        // C# / general highlighting
+        var result = encoded;
+
+        // Comments (// single line)
+        result = System.Text.RegularExpressions.Regex.Replace(
+            result, @"(\/\/.*)$", "<span class=\"hl-comment\">$1</span>",
+            System.Text.RegularExpressions.RegexOptions.Multiline);
+
+        // Strings (&quot;...&quot; after HtmlEncode)
+        result = System.Text.RegularExpressions.Regex.Replace(
+            result, @"(&quot;[^&]*?&quot;)", "<span class=\"hl-string\">$1</span>");
+
+        // C# keywords
+        var keywords = new[] {
+            "using", "namespace", "class", "struct", "enum", "interface",
+            "public", "private", "protected", "internal", "static", "readonly",
+            "override", "virtual", "abstract", "sealed", "partial", "async", "await",
+            "new", "return", "if", "else", "for", "foreach", "while", "do",
+            "switch", "case", "break", "continue", "default", "throw", "try", "catch", "finally",
+            "var", "void", "int", "float", "double", "bool", "string", "byte", "long", "ulong",
+            "true", "false", "null", "this", "base", "typeof", "sizeof", "is", "as", "in", "out", "ref",
+            "get", "set", "value", "yield", "where", "select", "from"
+        };
+        foreach (var kw in keywords)
+        {
+            result = System.Text.RegularExpressions.Regex.Replace(
+                result, $@"\b({kw})\b", $"<span class=\"hl-keyword\">{kw}</span>");
+        }
+
+        // Unity/common types (after keywords to avoid double-wrapping)
+        var types = new[] {
+            "MonoBehaviour", "NetworkBehaviour", "GameObject", "Transform", "Vector3", "Vector2",
+            "Quaternion", "Color", "Rigidbody", "Collider", "AudioSource", "AudioClip",
+            "SerializeField", "Header", "Tooltip", "RequireComponent",
+            "NetworkVariable", "ServerRpc", "ClientRpc", "NetworkManager",
+            "Action", "Func", "Task", "List", "Dictionary", "IEnumerator", "Coroutine"
+        };
+        foreach (var t in types)
+        {
+            result = System.Text.RegularExpressions.Regex.Replace(
+                result, $@"\b({t})\b", $"<span class=\"hl-type\">{t}</span>");
+        }
+
+        // Numbers
+        result = System.Text.RegularExpressions.Regex.Replace(
+            result, @"\b(\d+\.?\d*f?)\b", "<span class=\"hl-number\">$1</span>");
+
+        // Preprocessor directives (#if, #endif, #region, etc.)
+        result = System.Text.RegularExpressions.Regex.Replace(
+            result, @"^(\s*#\w+.*)$", "<span class=\"hl-preprocessor\">$1</span>",
+            System.Text.RegularExpressions.RegexOptions.Multiline);
+
+        // Attributes [SerializeField], [Header("...")]
+        result = System.Text.RegularExpressions.Regex.Replace(
+            result, @"(\[[\w]+(?:\(.*?\))?\])", "<span class=\"hl-attribute\">$1</span>");
+
+        return result;
     }
 }
