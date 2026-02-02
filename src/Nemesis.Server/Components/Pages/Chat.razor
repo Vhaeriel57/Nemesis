@@ -504,11 +504,7 @@
         // Step 3: Now HTML-encode the rest
         content = System.Web.HttpUtility.HtmlEncode(content);
 
-        // Step 4: Restore code blocks (they were already encoded internally)
-        for (int i = 0; i < codeBlocks.Count; i++)
-            content = content.Replace($"%%CODEBLOCK_{i}%%", codeBlocks[i]);
-        for (int i = 0; i < inlineBlocks.Count; i++)
-            content = content.Replace($"%%INLINE_{i}%%", inlineBlocks[i]);
+        // Step 4 (code blocks restored AFTER newline→<br> in step 7)
 
         // Step 5: Format markdown (bold, italic, headers, lists)
         content = System.Text.RegularExpressions.Regex.Replace(
@@ -525,8 +521,14 @@
             content, @"^- (.+)$", "<li>$1</li>",
             System.Text.RegularExpressions.RegexOptions.Multiline);
 
-        // Step 6: Newlines to <br> (but not inside code blocks)
+        // Step 6: Newlines to <br> BEFORE restoring code blocks (so <pre> content is not affected)
         content = content.Replace("\n", "<br>");
+
+        // Step 7: Restore code blocks AFTER <br> replacement (code blocks use <pre> which handles newlines natively)
+        for (int i = 0; i < codeBlocks.Count; i++)
+            content = content.Replace($"%%CODEBLOCK_{i}%%", codeBlocks[i]);
+        for (int i = 0; i < inlineBlocks.Count; i++)
+            content = content.Replace($"%%INLINE_{i}%%", inlineBlocks[i]);
 
         return content;
     }

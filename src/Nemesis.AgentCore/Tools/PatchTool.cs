@@ -94,7 +94,8 @@ public class PatchTool : ITool, IPatchService
             };
         }
 
-        var fullPath = Path.Combine(context.ProjectPath, filePath);
+        // Normalize path separators for cross-platform compatibility
+        var fullPath = Path.GetFullPath(Path.Combine(context.ProjectPath, filePath.Replace('/', Path.DirectorySeparatorChar)));
 
         if (!File.Exists(fullPath))
         {
@@ -302,6 +303,13 @@ public class PatchTool : ITool, IPatchService
     {
         try
         {
+            // Normalize path separators (fixes mixed / and \ on Windows)
+            if (!string.IsNullOrEmpty(patch.FilePath))
+            {
+                patch.FilePath = patch.FilePath.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
+                try { patch.FilePath = Path.GetFullPath(patch.FilePath); } catch { }
+            }
+
             // Ensure we have valid file path
             if (string.IsNullOrEmpty(patch.FilePath) || !File.Exists(patch.FilePath))
             {
